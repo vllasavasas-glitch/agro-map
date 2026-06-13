@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Карта полей</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; font-family: sans-serif; }
+        #map { height: 100vh; width: 100vw; }
+        .panel { position: absolute; top: 10px; left: 10px; z-index: 1000; background: white; padding: 10px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.3); max-width: 250px; }
+        input, button { width: 100%; padding: 8px; margin-top: 5px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+        button { background: #28a745; color: white; border: none; font-weight: bold; cursor: pointer; }
+        button:active { background: #218838; }
+        .clear-btn { background: #dc3545; margin-top: 5px; }
+    </style>
+</head>
+<body>
+
+    <div class="panel">
+        <b style="font-size: 14px;">🗺️ Добавление поля</b>
+        <input type="text" id="fieldName" placeholder="Название (напр. Поле №1)">
+        <button onclick="saveField()">💾 Сохранить поле</button>
+        <button class="clear-btn" onclick="location.reload()">❌ Сбросить точки</button>
+    </div>
+
+    <div id="map"></div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand(); 
+
+        // Центр возле Никополя
+        const map = L.map('map').setView([47.5746, 34.4396], 13);
+        
+        // Исправленная карта (OpenStreetMap)
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap'
+        }).addTo(map);
+
+        let activePoints = [];
+        let currentPolygon = null;
+
+        map.on('click', function(e) {
+            const lat = e.latlng.lat;
+            const lng = e.latlng.lng;
+            activePoints.push([lat, lng]);
+
+            if (currentPolygon) map.removeLayer(currentPolygon);
+            if (activePoints.length >= 2) {
+                currentPolygon = L.polygon(activePoints, {color: '#28a745'}).addTo(map);
+            } else {
+                L.marker([lat, lng]).addTo(map);
+            }
+        });
+
+        function saveField() {
+            const name = document.getElementById('fieldName').value.trim();
+            if (!name || activePoints.length < 3) { alert('Введите название и отметьте точки!'); return; }
+            tg.sendData(JSON.stringify({name: name, points: activePoints}));
+            tg.close();
+        }
+    </script>
+</body>
+</html>
