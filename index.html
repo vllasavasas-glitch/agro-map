@@ -10,42 +10,42 @@
     <style>
         body, html { margin: 0; padding: 0; height: 100%; overflow: hidden; }
         #map { height: 100vh; width: 100vw; }
-        .panel { position: absolute; top: 10px; left: 10px; z-index: 1000; background: white; padding: 10px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.5); }
-        button { width: 100%; padding: 10px; margin-top: 5px; border: none; border-radius: 4px; color: white; font-weight: bold; }
+        .panel { position: absolute; top: 10px; left: 10px; z-index: 1000; background: rgba(255,255,255,0.9); padding: 15px; border-radius: 12px; }
+        input { width: 100%; padding: 10px; margin-bottom: 10px; border: 1px solid #999; border-radius: 6px; }
+        button { width: 100%; padding: 10px; cursor: pointer; border: none; border-radius: 6px; color: white; font-weight: bold; margin-top: 5px; }
     </style>
 </head>
 <body>
     <div class="panel">
-        <b>🗺️ Мои Поля</b>
         <input type="text" id="fieldName" placeholder="Название поля">
-        <button style="background:#28a745;" onclick="saveField()">💾 Сохранить</button>
-        <button style="background:#dc3545;" onclick="location.reload()">❌ Сброс</button>
+        <button style="background:#28a745;" onclick="saveField()">💾 Сохранить в базу</button>
+        <button style="background:#dc3545;" onclick="location.reload()">❌ Очистить</button>
     </div>
     <div id="map"></div>
     <script>
         const tg = window.Telegram.WebApp;
         tg.expand();
         
-        // Карта Google Hybrid (Спутник + дороги)
+        // Esri Satellite - лучший спутник для сельского хозяйства
         const map = L.map('map').setView([47.5746, 34.4396], 15);
-        L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', {
-            attribution: '&copy; Google'
+        L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Esri Satellite'
         }).addTo(map);
 
-        let activePoints = [];
-        let currentPolygon = null;
+        let points = [];
+        let polygon = null;
 
-        map.on('click', function(e) {
-            activePoints.push([e.latlng.lat, e.latlng.lng]);
-            if (currentPolygon) map.removeLayer(currentPolygon);
-            currentPolygon = L.polygon(activePoints, {color: 'yellow', weight: 3}).addTo(map);
+        map.on('click', (e) => {
+            points.push([e.latlng.lat, e.latlng.lng]);
+            if (polygon) map.removeLayer(polygon);
+            polygon = L.polygon(points, {color: 'yellow', fillColor: 'yellow', fillOpacity: 0.3}).addTo(map);
         });
 
         function saveField() {
-            const name = document.getElementById('fieldName').value.trim();
-            if (!name || activePoints.length < 3) { alert('Введите название и кликните точки!'); return; }
-            tg.sendData(JSON.stringify({name: name, points: activePoints}));
-            tg.close();
+            const name = document.getElementById('fieldName').value;
+            if (!name || points.length < 3) return alert('Нужно название и минимум 3 точки');
+            
+            tg.sendData(JSON.stringify({name: name, points: points}));
         }
     </script>
 </body>
