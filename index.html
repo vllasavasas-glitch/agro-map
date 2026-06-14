@@ -3,192 +3,529 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
-  <title>AgroMap — Мої поля</title>
+  <title>AgroMap — Поля · NDVI · Агро-рада · Опади</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-      background: #1a2e1a;
-      color: #e8f5e9;
-      height: 100vh;
-      display: flex;
-      flex-direction: column;
+      background: #0f1f10; color: #e8f5e9;
+      height: 100vh; display: flex; flex-direction: column; overflow: hidden;
     }
     header {
-      background: #1b3a1b;
-      border-bottom: 2px solid #4caf50;
-      padding: 8px 14px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      flex-shrink: 0;
+      background: linear-gradient(90deg, #162d16 0%, #1b3a1b 100%);
+      border-bottom: 2px solid #3d8b40;
+      padding: 7px 14px; display: flex; align-items: center; gap: 10px;
+      flex-shrink: 0; z-index: 1000;
     }
-    header .logo { font-size: 22px; }
-    header h1 { font-size: 16px; font-weight: 700; color: #81c784; }
-    header .subtitle { font-size: 11px; color: #66bb6a; margin-top: 1px; }
+    header .logo { font-size: 24px; filter: drop-shadow(0 0 6px #4caf5066); }
+    header h1 { font-size: 16px; font-weight: 800; color: #81c784; letter-spacing: .3px; }
+    header .subtitle { font-size: 10px; color: #4d8c51; margin-top: 1px; letter-spacing: .5px; text-transform: uppercase; }
+    .header-stats { display: flex; gap: 10px; margin-left: 10px; }
+    .stat-chip {
+      background: rgba(76,175,80,.12); border: 1px solid #3d8b4040;
+      border-radius: 20px; padding: 2px 10px; font-size: 11px; color: #81c784; white-space: nowrap;
+    }
+    .stat-chip b { color: #a5d6a7; }
+    .stat-chip.warn { background: rgba(255,152,0,.15); border-color: #ff980040; color: #ffcc80; }
+    .stat-chip.warn b { color: #ffe082; }
+    .header-buttons { margin-left: auto; display: flex; gap: 7px; }
+    .icon-btn {
+      background: #203d20; border: 1.5px solid #3d8b40; border-radius: 9px;
+      color: #e8f5e9; font-size: 15px; width: 34px; height: 34px;
+      display: flex; align-items: center; justify-content: center; cursor: pointer;
+      transition: background .2s, border-color .2s;
+    }
+    .icon-btn:hover { background: #4caf50; border-color: #66bb6a; }
+    .icon-btn.active { background: #4caf50; border-color: #66bb6a; }
+
     .mode-bar {
-      background: #1b3a1b;
-      padding: 6px 14px;
-      display: flex;
-      gap: 8px;
-      flex-shrink: 0;
-      flex-wrap: wrap;
+      background: #162d16; border-bottom: 1px solid #2a4a2a;
+      padding: 6px 12px; display: flex; gap: 6px; flex-shrink: 0;
+      flex-wrap: nowrap; align-items: center; overflow-x: auto; scrollbar-width: none;
     }
+    .mode-bar::-webkit-scrollbar { display: none; }
     .mode-btn {
-      padding: 5px 12px;
-      border: 1.5px solid #4caf50;
-      border-radius: 20px;
-      background: transparent;
-      color: #81c784;
-      font-size: 12px;
-      cursor: pointer;
-      transition: all .2s;
+      padding: 5px 11px; border: 1.5px solid #3d8b40; border-radius: 20px;
+      background: transparent; color: #81c784; font-size: 12px; cursor: pointer;
+      transition: all .18s; white-space: nowrap; flex-shrink: 0;
     }
-    .mode-btn.active, .mode-btn:hover { background: #4caf50; color: #fff; }
-    #map { flex: 1; width: 100%; background: #1e3a1e; }
+    .mode-btn.active, .mode-btn:hover { background: #4caf50; color: #fff; border-color: #66bb6a; }
+    .mode-btn:disabled { opacity: 0.38; cursor: default; }
+    .ndvi-btn {
+      padding: 5px 11px; border: 1.5px solid #558b2f; border-radius: 20px;
+      background: transparent; color: #aed581; font-size: 12px; cursor: pointer;
+      transition: all .18s; white-space: nowrap; flex-shrink: 0;
+    }
+    .ndvi-btn.active { background: #33691e; color: #fff; border-color: #8bc34a; }
+    .ndvi-btn:hover { background: #33691e; color: #fff; }
+    .layer-btn {
+      padding: 5px 11px; border: 1.5px solid #1976d2; border-radius: 20px;
+      background: transparent; color: #90caf9; font-size: 12px; cursor: pointer;
+      transition: all .18s; white-space: nowrap; flex-shrink: 0;
+    }
+    .layer-btn.active { background: #1565c0; color: #fff; border-color: #42a5f5; }
+    .layer-btn:hover { background: #1565c0; color: #fff; }
+    .soil-btn {
+      padding: 5px 11px; border: 1.5px solid #8d6e63; border-radius: 20px;
+      background: transparent; color: #d7ccc8; font-size: 12px; cursor: pointer;
+      transition: all .18s; white-space: nowrap; flex-shrink: 0;
+    }
+    .soil-btn.active { background: #5d4037; color: #fff; border-color: #a1887f; }
+    .soil-btn:hover { background: #5d4037; color: #fff; }
+    .toolbar-sep { width: 1px; height: 22px; background: #2a4a2a; flex-shrink: 0; margin: 0 2px; }
+
+    .main-container { display: flex; flex: 1; overflow: hidden; position: relative; }
+    #map { flex: 1; background: #1e3a1e; z-index: 1; }
+
+    .layer-switcher-panel {
+      position: absolute; top: 10px; right: 10px;
+      background: rgba(22,45,22,0.97); border: 1.5px solid #3d8b40;
+      border-radius: 12px; padding: 10px 12px; z-index: 900; display: none;
+      min-width: 195px; box-shadow: 0 4px 18px rgba(0,0,0,.6);
+    }
+    .layer-switcher-panel.show { display: block; }
+    .lsp-title { font-size: 11px; color: #5a8a5a; font-weight: 700; margin-bottom: 8px; letter-spacing: .5px; text-transform: uppercase; }
+    .lsp-group { margin-bottom: 8px; }
+    .lsp-group-title { font-size: 10px; color: #4d8c51; margin-bottom: 5px; }
+    .lsp-item {
+      display: flex; align-items: center; gap: 8px; padding: 5px 8px;
+      border-radius: 7px; cursor: pointer; font-size: 12px; color: #c8e6c9;
+      transition: background .15s; margin-bottom: 2px;
+    }
+    .lsp-item:hover { background: rgba(76,175,80,.15); }
+    .lsp-item.active { background: rgba(76,175,80,.2); color: #a5d6a7; font-weight: 600; }
+    .lsp-radio { width: 14px; height: 14px; border: 1.5px solid #4caf50; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .lsp-radio.checked::after { content: ""; width: 7px; height: 7px; background: #4caf50; border-radius: 50%; }
+    .lsp-checkbox { width: 14px; height: 14px; border: 1.5px solid #558b2f; border-radius: 3px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 9px; }
+    .lsp-checkbox.checked { background: #4caf50; border-color: #4caf50; }
+    .lsp-checkbox.checked::after { content: "✓"; color: white; font-weight: 700; }
+    .lsp-divider { height: 1px; background: #2a4a2a; margin: 6px 0; }
+
+    .weather-widget {
+      position: absolute; top: 10px; left: 10px;
+      background: rgba(22,45,22,0.96); border: 1.5px solid #3d8b40;
+      border-radius: 10px; padding: 9px 13px; z-index: 800; display: none;
+      font-size: 12px; color: #c8e6c9; min-width: 168px;
+      box-shadow: 0 4px 14px rgba(0,0,0,.5);
+    }
+    .weather-widget.show { display: block; }
+    .weather-widget { max-width: 290px; }
+    .weather-title { font-size: 10px; color: #4d8c51; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+    .weather-row { display: flex; align-items: center; gap: 8px; }
+    .weather-temp { font-size: 22px; font-weight: 700; color: #a5d6a7; }
+    .weather-desc { font-size: 11px; color: #81c784; }
+    .weather-meta { font-size: 10px; color: #5a8a5a; margin-top: 4px; display: flex; gap: 9px; }
+    .weather-alert { color: #e57373; font-size: 10px; margin-top: 4px; font-weight: 600; }
+    .weather-good { color: #81c784; font-size: 10px; margin-top: 4px; font-weight: 600; }
+
+    .agro-advisor-panel {
+      position: absolute; bottom: 10px; left: 10px;
+      background: rgba(22,45,22,0.97); border: 1.5px solid #558b2f;
+      border-radius: 12px; padding: 11px 13px; z-index: 850; display: none;
+      font-size: 12px; color: #c8e6c9; max-width: 280px; min-width: 240px;
+      box-shadow: 0 4px 18px rgba(0,0,0,.55);
+    }
+    .agro-advisor-panel.show { display: block; }
+    .agro-advisor-title { font-size: 11px; color: #aed581; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px; }
+    .agro-tip {
+      background: #1a3a1a; border-radius: 8px; padding: 7px 9px; margin-bottom: 6px;
+      border-left: 3px solid #4caf50; font-size: 11px; line-height: 1.45;
+    }
+    .agro-tip.warn { border-left-color: #ff9800; background: #2a2a1a; }
+    .agro-tip.danger { border-left-color: #e57373; background: #2a1a1a; }
+    .agro-tip.info { border-left-color: #42a5f5; background: #1a2a3a; }
+    .agro-tip b { color: #a5d6a7; display: block; margin-bottom: 2px; font-size: 11px; }
+    .agro-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; margin-bottom: 8px; }
+    .agro-metric {
+      background: #203d20; border-radius: 7px; padding: 6px 8px; text-align: center;
+      border: 1px solid #2a4a2a;
+    }
+    .agro-metric-val { font-size: 16px; font-weight: 700; color: #a5d6a7; }
+    .agro-metric-lbl { font-size: 9px; color: #4d8c51; margin-top: 1px; text-transform: uppercase; letter-spacing: .3px; }
+
+    .ndvi-legend {
+      position: absolute; bottom: 10px; right: 10px;
+      background: rgba(22,45,22,0.95); border: 1.5px solid #3d8b40;
+      border-radius: 10px; padding: 10px 13px; z-index: 800; display: none;
+      font-size: 11px; color: #e8f5e9; min-width: 145px;
+    }
+    .ndvi-legend.show { display: block; }
+    .ndvi-legend-title { font-weight: 700; margin-bottom: 6px; color: #a5d6a7; font-size: 12px; }
+    .ndvi-bar { height: 12px; width: 100%; border-radius: 4px; background: linear-gradient(to right, #d73027, #fc8d59, #fee08b, #ffffbf, #d9ef8b, #91cf60, #1a9850); margin-bottom: 4px; }
+    .ndvi-bar-labels { display: flex; justify-content: space-between; color: #81c784; font-size: 10px; }
+    .ndvi-note { margin-top: 6px; color: #66bb6a; font-size: 10px; line-height: 1.4; }
+
+    .soil-legend {
+      position: absolute; bottom: 100px; right: 10px;
+      background: rgba(22,45,22,0.95); border: 1.5px solid #8d6e63;
+      border-radius: 10px; padding: 10px 13px; z-index: 800; display: none;
+      font-size: 11px; color: #e8f5e9; min-width: 145px;
+    }
+    .soil-legend.show { display: block; }
+    .soil-legend-title { font-weight: 700; margin-bottom: 6px; color: #d7ccc8; font-size: 12px; }
+    .soil-bar { height: 12px; width: 100%; border-radius: 4px; background: linear-gradient(to right, #8b4513, #cd853f, #f4a460, #ffe4b5, #e0f7fa, #81d4fa, #1565c0); margin-bottom: 4px; }
+    .soil-bar-labels { display: flex; justify-content: space-between; color: #a1887f; font-size: 10px; }
+    .soil-note { margin-top: 6px; color: #a1887f; font-size: 10px; line-height: 1.4; }
+
+    .side-panel {
+      width: 295px; background: #162d16; border-left: 2px solid #3d8b40;
+      display: flex; flex-direction: column; flex-shrink: 0; overflow-y: auto;
+      transition: width 0.28s, opacity 0.28s; z-index: 500;
+    }
+    .side-panel.collapsed { width: 0; opacity: 0; pointer-events: none; border-left: none; }
+    .side-panel-header {
+      padding: 10px 14px; border-bottom: 1px solid #2a4a2a;
+      font-weight: 700; font-size: 14px; color: #a5d6a7;
+      display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;
+    }
+    .side-panel-header small { font-weight: 400; color: #4d8c51; margin-left: 6px; }
+    .search-box { padding: 8px 12px; border-bottom: 1px solid #2a4a2a; }
+    .search-box input {
+      width: 100%; padding: 7px 10px; background: #203d20;
+      border: 1.5px solid #3d8b40; border-radius: 8px; color: #e8f5e9; font-size: 13px;
+    }
+    .search-box input:focus { outline: none; border-color: #66bb6a; }
+    .side-panel-list { flex: 1; overflow-y: auto; padding: 8px; }
+    .field-item {
+      background: #203d20; border-radius: 9px; padding: 10px 12px; margin-bottom: 7px;
+      cursor: pointer; transition: background .15s; border: 1px solid transparent;
+    }
+    .field-item:hover { background: #2e4d2e; border-color: #4caf50; }
+    .field-item .fi-name { font-weight: 700; font-size: 13px; color: #e8f5e9; }
+    .field-item .fi-info { font-size: 11px; color: #81c784; margin-top: 2px; }
+    .field-item .fi-area { font-size: 11px; color: #5a8a5a; margin-top: 1px; }
+    .field-item .fi-health {
+      display: inline-block; font-size: 10px; padding: 1px 7px; border-radius: 10px;
+      margin-top: 4px; font-weight: 600;
+    }
+    .fi-health.good { background: rgba(76,175,80,.2); color: #81c784; }
+    .fi-health.mid { background: rgba(255,193,7,.15); color: #ffd54f; }
+    .fi-health.low { background: rgba(244,67,54,.15); color: #ef9a9a; }
+    .empty-list { text-align: center; color: #4d8c51; padding: 28px 10px; font-size: 13px; }
+    .total-area-bar { padding: 6px 12px; border-top: 1px solid #2a4a2a; font-size: 11px; color: #5a8a5a; text-align: center; }
+    .total-area-bar span { color: #81c784; font-weight: 700; }
+    .panel-actions { padding: 8px 12px; border-top: 1px solid #2a4a2a; display: flex; gap: 7px; flex-shrink: 0; }
+    .panel-actions button {
+      flex: 1; padding: 6px; font-size: 11px; background: #203d20;
+      border: 1px solid #3d8b40; color: #e8f5e9; border-radius: 7px; cursor: pointer; transition: background .15s;
+    }
+    .panel-actions button:hover { background: #2e4d2e; }
+
     .bottom-panel {
-      background: #1b3a1b;
-      border-top: 2px solid #4caf50;
-      padding: 10px 14px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      flex-shrink: 0;
+      background: #162d16; border-top: 2px solid #3d8b40; padding: 9px 13px;
+      display: flex; flex-direction: column; gap: 7px; flex-shrink: 0; z-index: 1000;
     }
-    .field-row { display: flex; gap: 8px; align-items: center; }
+    .field-row { display: flex; gap: 7px; align-items: center; }
     .field-row input, .field-row select {
-      flex: 1;
-      padding: 8px 10px;
-      background: #2e4d2e;
-      border: 1.5px solid #4caf50;
-      border-radius: 8px;
-      color: #e8f5e9;
-      font-size: 13px;
+      flex: 1; padding: 7px 10px; background: #203d20;
+      border: 1.5px solid #3d8b40; border-radius: 8px; color: #e8f5e9; font-size: 13px;
+      transition: border-color .15s;
     }
-    .field-row input::placeholder { color: #5a8a5a; }
+    .field-row input:focus, .field-row select:focus { outline: none; border-color: #66bb6a; }
+    .field-row input[type="date"] { color-scheme: dark; }
+    .field-row input::placeholder { color: #4d8c51; }
     .area-display { font-size: 12px; color: #81c784; text-align: center; }
     .area-display span { font-weight: 700; color: #a5d6a7; }
-    .btn-save {
-      width: 100%;
-      padding: 10px;
-      background: linear-gradient(135deg, #388e3c, #4caf50);
-      border: none;
-      border-radius: 10px;
-      color: #fff;
-      font-size: 14px;
-      font-weight: 700;
-      cursor: pointer;
-      transition: opacity .2s;
+    .btn-save, .btn-cancel {
+      width: 100%; padding: 10px; border: none; border-radius: 10px;
+      color: #fff; font-size: 14px; font-weight: 700; cursor: pointer; transition: opacity .18s, transform .1s;
     }
-    .btn-save:disabled { opacity: .4; cursor: default; }
-    .btn-save:not(:disabled):hover { opacity: .85; }
-    .hint { font-size: 11px; color: #5a8a5a; text-align: center; }
+    .btn-save { background: linear-gradient(135deg, #2e7d32, #43a047, #66bb6a); }
+    .btn-save:disabled { opacity: .35; cursor: default; }
+    .btn-save:not(:disabled):hover { opacity: .88; }
+    .btn-save:not(:disabled):active { transform: scale(.98); }
+    .btn-cancel { background: #4e342e; margin-top: 3px; display: none; }
+    .btn-cancel.visible { display: block; }
+    .btn-cancel:hover { background: #5d4037; }
+    .hint { font-size: 11px; color: #4d8c51; text-align: center; min-height: 16px; }
+
     .leaflet-popup-content-wrapper {
-      background: #1b3a1b;
-      color: #e8f5e9;
-      border: 1px solid #4caf50;
-      border-radius: 12px;
-      box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+      background: #162d16; color: #e8f5e9; border: 1.5px solid #3d8b40;
+      border-radius: 13px; box-shadow: 0 6px 18px rgba(0,0,0,.65);
     }
-    .leaflet-popup-tip { background: #1b3a1b; }
-    .leaflet-popup-content { font-size: 13px; line-height: 1.5; margin: 12px 14px; }
-    .popup-btn-delete {
-      background: #c62828;
-      color: white;
-      border: none;
-      border-radius: 8px;
-      padding: 6px 12px;
-      font-size: 12px;
-      font-weight: bold;
-      margin-top: 10px;
-      width: 100%;
-      cursor: pointer;
-      transition: background 0.2s;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
+    .leaflet-popup-tip { background: #162d16; }
+    .leaflet-popup-content { font-size: 13px; line-height: 1.55; margin: 12px 14px; max-height: 480px; overflow-y: auto; }
+    .popup-btn {
+      background: #203d20; color: white; border: none; border-radius: 8px;
+      padding: 6px 12px; font-size: 12px; font-weight: bold; margin-top: 6px;
+      width: 100%; cursor: pointer; transition: background 0.18s;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
     }
-    .popup-btn-delete:hover { background: #b71c1c; }
-    .popup-btn-delete:active { transform: scale(0.97); }
+    .popup-btn-delete { background: #b71c1c; }
+    .popup-btn-delete:hover { background: #c62828; }
+    .popup-btn-edit { background: #1b5e20; }
+    .popup-btn-edit:hover { background: #2e7d32; }
+    .popup-btn:active { transform: scale(0.97); }
+    .ndvi-value-block {
+      margin-top: 8px; padding: 8px 10px;
+      background: #1a3a1a; border-radius: 8px; border-left: 3px solid #4caf50;
+    }
+    .ndvi-value-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .ndvi-color-bar {
+      flex: 1; height: 8px; border-radius: 4px;
+      background: linear-gradient(to right, #d73027, #fee08b, #91cf60, #1a9850); position: relative;
+    }
+    .ndvi-indicator {
+      position: absolute; top: -3px; width: 14px; height: 14px;
+      background: #fff; border: 2px solid #162d16; border-radius: 50%;
+      transform: translateX(-50%); box-shadow: 0 1px 4px rgba(0,0,0,.5);
+    }
+    .ndvi-status { font-size: 11px; margin-top: 2px; }
+    .ndvi-chart-container { margin-top: 8px; }
+    .ndvi-chart-container canvas { width: 100% !important; height: 100px !important; }
+    .agro-block {
+      margin-top: 8px; padding: 8px 10px; background: #1a2a1a;
+      border-radius: 8px; border-left: 3px solid #aed581; font-size: 11px;
+    }
+    .agro-block-row { display: flex; justify-content: space-between; margin-bottom: 3px; color: #81c784; }
+    .agro-block-row span:last-child { color: #a5d6a7; font-weight: 600; }
+    .growth-bar { height: 6px; background: #2a4a2a; border-radius: 3px; margin: 6px 0 4px; overflow: hidden; }
+    .growth-bar-fill { height: 100%; background: linear-gradient(90deg, #33691e, #7cb342, #aed581); border-radius: 3px; transition: width .4s; }
+    .spray-badge {
+      display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; margin-top: 4px;
+    }
+    .spray-ok { background: rgba(76,175,80,.25); color: #a5d6a7; }
+    .spray-warn { background: rgba(255,152,0,.2); color: #ffcc80; }
+    .spray-bad { background: rgba(244,67,54,.2); color: #ef9a9a; }
+    .spray-timeline { margin-top: 8px; max-height: 120px; overflow-y: auto; }
+    .spray-hour {
+      display: flex; align-items: center; gap: 6px; font-size: 10px; margin-bottom: 3px;
+    }
+    .spray-hour-bar { flex: 1; height: 8px; border-radius: 4px; }
+    .spray-h-ok { background: #4caf50; }
+    .spray-h-warn { background: #ff9800; }
+    .spray-h-bad { background: #e57373; }
+    .rain-table { width: 100%; margin-top: 8px; border-collapse: collapse; font-size: 11px; }
+    .rain-table td { padding: 3px 5px; border-bottom: 1px solid #2a4a2a; }
+    .rain-loading { text-align: center; padding: 8px; color: #4d8c51; }
+    .popup-weather {
+      margin-top: 6px; padding: 7px 10px; background: #1a3a2a;
+      border-radius: 8px; border-left: 3px solid #29b6f6; font-size: 12px;
+    }
+    .popup-weather-row { display: flex; align-items: center; gap: 6px; }
+    .notes-area {
+      width: 100%; margin-top: 6px; padding: 6px 8px;
+      background: #203d20; border: 1px solid #3d8b40; border-radius: 6px;
+      color: #e8f5e9; font-size: 12px; resize: vertical;
+    }
+    .notes-save-btn {
+      margin-top: 4px; padding: 3px 10px; background: #4caf50; border: none;
+      border-radius: 5px; color: white; cursor: pointer; font-size: 11px;
+    }
+    .ops-list { margin-top: 6px; max-height: 100px; overflow-y: auto; }
+    .ops-item { font-size: 10px; padding: 4px 6px; background: #203d20; border-radius: 5px; margin-bottom: 3px; color: #81c784; }
+    .ops-form { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px; }
+    .ops-form select, .ops-form input { flex: 1; min-width: 80px; padding: 4px 6px; background: #203d20; border: 1px solid #3d8b40; border-radius: 5px; color: #e8f5e9; font-size: 11px; }
+    .ops-add-btn { padding: 4px 10px; background: #33691e; border: none; border-radius: 5px; color: white; font-size: 11px; cursor: pointer; }
+
+    .float-panel {
+      position: absolute; top: 10px; right: 10px;
+      background: rgba(22,45,22,0.97); border: 1.5px solid #3d8b40;
+      border-radius: 12px; padding: 11px 13px; z-index: 880; display: none;
+      font-size: 12px; color: #c8e6c9; max-width: 320px; min-width: 260px;
+      max-height: calc(100vh - 180px); overflow-y: auto;
+      box-shadow: 0 4px 18px rgba(0,0,0,.6);
+    }
+    .float-panel.show { display: block; }
+    .float-panel-title { font-size: 11px; color: #a5d6a7; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+    .dash-crop-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; font-size: 11px; }
+    .dash-crop-bar { flex: 1; height: 10px; background: #2a4a2a; border-radius: 5px; overflow: hidden; }
+    .dash-crop-fill { height: 100%; border-radius: 5px; }
+    .cal-item {
+      background: #203d20; border-radius: 8px; padding: 7px 9px; margin-bottom: 5px;
+      border-left: 3px solid #4caf50; font-size: 11px; cursor: pointer;
+    }
+    .cal-item.past { opacity: .55; border-left-color: #555; }
+    .cal-item.soon { border-left-color: #ff9800; }
+    .cal-item.today { border-left-color: #42a5f5; background: #1a2a3a; }
+    .cal-date { font-size: 10px; color: #4d8c51; }
+    .gps-indicator {
+      position: absolute; top: 50px; left: 50%; transform: translateX(-50%);
+      background: rgba(21,101,192,.92); color: white; padding: 6px 16px; border-radius: 20px;
+      font-size: 12px; font-weight: 700; z-index: 950; display: none;
+      box-shadow: 0 4px 14px rgba(0,0,0,.5);
+    }
+    .gps-indicator.show { display: block; animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.7} }
+
+    .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.75); z-index: 9999; display: none; align-items: center; justify-content: center; }
+    .overlay.show { display: flex; }
+    .dialog { background: #162d16; border: 2px solid #3d8b40; border-radius: 16px; padding: 22px; min-width: 280px; max-width: 90vw; text-align: center; box-shadow: 0 10px 30px black; }
+    .dialog p { margin-bottom: 16px; font-size: 14px; }
+    .dialog-buttons { display: flex; gap: 10px; justify-content: center; }
+    .dialog-btn { padding: 8px 22px; border: none; border-radius: 9px; font-weight: 700; cursor: pointer; font-size: 13px; }
+    .dialog-btn-confirm { background: #c62828; color: white; }
+    .dialog-btn-confirm:hover { background: #b71c1c; }
+    .dialog-btn-cancel { background: #2e4d2e; color: #e8f5e9; }
+    .dialog-btn-cancel:hover { background: #3a5a3a; }
+
     #toast {
-      position: fixed;
-      bottom: 80px;
-      left: 50%;
+      position: fixed; bottom: 85px; left: 50%;
       transform: translateX(-50%) translateY(30px);
-      background: #388e3c;
-      color: #fff;
-      padding: 8px 18px;
-      border-radius: 28px;
-      font-size: 13px;
-      opacity: 0;
-      transition: all .3s;
-      pointer-events: none;
-      z-index: 9999;
-      white-space: nowrap;
-      font-weight: 500;
-      box-shadow: 0 4px 12px black;
+      background: #2e7d32; color: #fff; padding: 8px 18px;
+      border-radius: 28px; font-size: 13px; opacity: 0; transition: all .28s;
+      pointer-events: none; z-index: 10000; white-space: nowrap; font-weight: 500;
+      box-shadow: 0 4px 14px rgba(0,0,0,.7);
     }
     #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-    .crop-label {
-      background: transparent;
-      border: none;
-      text-align: center;
-      pointer-events: none;
-    }
-    .crop-label-inner {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 1px;
-      filter: drop-shadow(0 1px 3px rgba(0,0,0,0.8));
-    }
-    .crop-emoji {
-      font-size: 28px;
-      line-height: 1;
-      transition: opacity .3s;
-    }
-    .crop-name-tag {
-      background: rgba(0,0,0,0.65);
-      color: #fff;
-      font-size: 10px;
-      font-weight: 700;
-      padding: 2px 6px;
-      border-radius: 14px;
-      white-space: nowrap;
-      letter-spacing: .3px;
-    }
-    @media (max-width: 500px) {
-      .mode-bar { justify-content: center; }
+
+    .crop-label { background: transparent; border: none; text-align: center; pointer-events: none; }
+    .crop-label-inner { display: flex; flex-direction: column; align-items: center; gap: 1px; filter: drop-shadow(0 1px 4px rgba(0,0,0,.85)); }
+    .crop-emoji { font-size: 28px; line-height: 1; transition: opacity .3s; }
+    .crop-name-tag { background: rgba(0,0,0,.72); color: #fff; font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 14px; white-space: nowrap; letter-spacing: .3px; }
+
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #2e4d2e; border-radius: 3px; }
+
+    @media (max-width: 600px) {
+      .side-panel { position: absolute; right: 0; top: 0; bottom: 0; width: 270px; }
       .crop-emoji { font-size: 24px; }
-      .crop-name-tag { font-size: 9px; }
+      .header-stats .stat-chip:nth-child(2) { display: none; }
+      .agro-advisor-panel { max-width: calc(100vw - 20px); bottom: auto; top: auto; }
+      .mode-bar { padding: 5px 8px; gap: 4px; }
+      .mode-btn, .ndvi-btn, .soil-btn, .layer-btn { font-size: 11px; padding: 4px 8px; }
     }
   </style>
 </head>
 <body>
-
 <header>
   <div class="logo">🌾</div>
   <div>
     <h1>AgroMap</h1>
-    <div class="subtitle">Управління полями</div>
+    <div class="subtitle">Поля · Календар · GPS · GeoJSON</div>
+  </div>
+  <div class="header-stats">
+    <div class="stat-chip">📋 Полів: <b id="stat-fields">0</b></div>
+    <div class="stat-chip">📐 <b id="stat-area">0</b> га</div>
+    <div class="stat-chip warn" id="stat-alerts" style="display:none">⚠️ <b id="stat-alert-count">0</b></div>
+  </div>
+  <div class="header-buttons">
+    <button class="icon-btn" id="btn-dashboard-toggle" onclick="toggleDashboard()" title="Дашборд сезону">📊</button>
+    <button class="icon-btn" id="btn-calendar-toggle" onclick="toggleCalendar()" title="Календар робіт">📅</button>
+    <button class="icon-btn" id="btn-agro-toggle" onclick="toggleAgroAdvisor()" title="Агро-рада">🌱</button>
+    <button class="icon-btn" id="btn-weather-toggle" onclick="toggleWeatherWidget()" title="Погода">🌤</button>
+    <button class="icon-btn" id="btn-layers-toggle" onclick="toggleLayerPanel()" title="Шари карти">🗺</button>
+    <button class="icon-btn" id="btn-toggle-list" onclick="toggleSidePanel()" title="Список полів">📋</button>
   </div>
 </header>
 
 <div class="mode-bar">
   <button class="mode-btn active" id="btn-draw" onclick="setMode('draw')">✏️ Малювати</button>
-  <button class="mode-btn" id="btn-view" onclick="setMode('view')">👁 Переглянути</button>
-  <button class="mode-btn" id="btn-clear" onclick="clearCurrent()">🗑 Очистити малюнок</button>
+  <button class="mode-btn" id="btn-view" onclick="setMode('view')">👁 Перегляд</button>
+  <div class="toolbar-sep"></div>
+  <button class="mode-btn" id="btn-undo-point" onclick="undoLastPoint()" disabled>↩ Відмінити</button>
+  <button class="mode-btn" id="btn-rectify" onclick="makeRectangle()" disabled>🔲 Прямокутник</button>
+  <button class="mode-btn" id="btn-clear" onclick="clearCurrent()">🗑 Очистити</button>
+  <button class="mode-btn" id="btn-gps" onclick="toggleGpsTrack()">📍 GPS</button>
+  <div class="toolbar-sep"></div>
+  <button class="ndvi-btn" id="btn-ndvi-layer" onclick="toggleNdviLayer()">🌿 NDVI</button>
+  <button class="soil-btn" id="btn-soil-layer" onclick="toggleSoilLayer()">💧 Вологість</button>
+  <button class="layer-btn" id="btn-s2-layer" onclick="toggleSentinel2()">🛰 MODIS RGB</button>
 </div>
 
-<div id="map"></div>
+<div class="main-container">
+  <div id="map"></div>
+  <div class="gps-indicator" id="gpsIndicator">📍 GPS запис... Натисніть знову, щоб зупинити</div>
+
+  <div class="float-panel" id="dashboardPanel">
+    <div class="float-panel-title">📊 Дашборд сезону <button class="icon-btn" onclick="toggleDashboard(false)" style="width:22px;height:22px;font-size:11px;">✕</button></div>
+    <div id="dashboardContent"></div>
+  </div>
+
+  <div class="float-panel" id="calendarPanel" style="right:auto;left:10px;max-width:300px;">
+    <div class="float-panel-title">📅 Календар робіт <button class="icon-btn" onclick="toggleCalendar(false)" style="width:22px;height:22px;font-size:11px;">✕</button></div>
+    <div id="calendarContent"></div>
+  </div>
+
+  <div class="weather-widget" id="weatherWidget">
+    <div class="weather-title">📍 Погода зараз</div>
+    <div id="weatherContent"><div class="rain-loading">⏳ Завантаження...</div></div>
+  </div>
+
+  <div class="agro-advisor-panel" id="agroAdvisor">
+    <div class="agro-advisor-title">🌱 Агро-рада · сезон</div>
+    <div id="agroAdvisorContent"><div class="rain-loading">⏳ Аналіз...</div></div>
+  </div>
+
+  <div class="layer-switcher-panel" id="layerPanel">
+    <div class="lsp-title">🗺 Шари карти</div>
+    <div class="lsp-group">
+      <div class="lsp-group-title">Базова карта</div>
+      <div class="lsp-item active" id="lsp-esri-imagery" onclick="setBaseLayer('imagery')">
+        <div class="lsp-radio checked" id="r-imagery"></div> 🛰 Esri Супутник
+      </div>
+      <div class="lsp-item" id="lsp-esri-topo" onclick="setBaseLayer('topo')">
+        <div class="lsp-radio" id="r-topo"></div> 🗺 Esri Топографія
+      </div>
+      <div class="lsp-item" id="lsp-osm" onclick="setBaseLayer('osm')">
+        <div class="lsp-radio" id="r-osm"></div> 🌍 OpenStreetMap
+      </div>
+    </div>
+    <div class="lsp-divider"></div>
+    <div class="lsp-group">
+      <div class="lsp-group-title">Додаткові шари</div>
+      <div class="lsp-item" id="lsp-ndvi" onclick="toggleNdviLayer()">
+        <div class="lsp-checkbox" id="cb-ndvi"></div> 🌿 MODIS NDVI (NASA)
+      </div>
+      <div class="lsp-item" id="lsp-soil" onclick="toggleSoilLayer()">
+        <div class="lsp-checkbox" id="cb-soil"></div> 💧 Вологість ґрунту (AMSR2)
+      </div>
+      <div class="lsp-item" id="lsp-s2" onclick="toggleSentinel2()">
+        <div class="lsp-checkbox" id="cb-s2"></div> 🛰 MODIS True Color
+      </div>
+    </div>
+    <div class="lsp-divider"></div>
+    <div style="font-size:10px;color:#3a5a3a;text-align:center;">Дані: NASA GIBS · Copernicus · Esri</div>
+  </div>
+
+  <div class="ndvi-legend" id="ndviLegend">
+    <div class="ndvi-legend-title">🌿 NDVI шар</div>
+    <div class="ndvi-bar"></div>
+    <div class="ndvi-bar-labels"><span>-1</span><span>0</span><span>+1</span></div>
+    <div class="ndvi-note">🟢 Зелений — здорова рослинність<br>🟡 Жовтий — стрес рослин<br>🔴 Червоний — ґрунт / вода</div>
+    <div style="margin-top:6px;font-size:10px;color:#4d8c51;">Джерело: NASA GIBS / MODIS Terra</div>
+  </div>
+
+  <div class="soil-legend" id="soilLegend">
+    <div class="soil-legend-title">💧 Вологість ґрунту</div>
+    <div class="soil-bar"></div>
+    <div class="soil-bar-labels"><span>0%</span><span>100%</span></div>
+    <div class="soil-note">🔵 Синій — дуже волого<br>🟤 Коричневий — сухо</div>
+    <div style="margin-top:6px;font-size:10px;color:#4d8c51;">Джерело: NASA GIBS / AMSR2 LPRM</div>
+  </div>
+
+  <div class="side-panel collapsed" id="sidePanel">
+    <div class="side-panel-header">
+      <span>📋 Мої поля <small id="fieldCount"></small></span>
+      <button class="icon-btn" onclick="toggleSidePanel(false)" style="font-size:13px;width:26px;height:26px;">✕</button>
+    </div>
+    <div class="search-box">
+      <input type="text" id="searchInput" placeholder="🔍 Пошук за назвою..." oninput="refreshFieldList()" />
+    </div>
+    <div class="side-panel-list" id="fieldList">
+      <div class="empty-list">Немає збережених полів</div>
+    </div>
+    <div class="total-area-bar">Загальна площа: <span id="total-area-side">0</span> га</div>
+    <div class="panel-actions">
+      <button onclick="exportFields()">📤 JSON</button>
+      <button onclick="exportGeoJSON()">🗺 GeoJSON</button>
+      <button onclick="importFields()">📥 JSON</button>
+    </div>
+    <div class="panel-actions">
+      <button onclick="importGeoKml()">📂 KML/GeoJSON</button>
+      <button onclick="zoomToAll()">🔍 Всі</button>
+    </div>
+  </div>
+</div>
 
 <div class="bottom-panel">
   <div class="field-row">
-    <input type="text" id="fieldName" placeholder="Назва поля (наприклад: Північ-1)" />
+    <input type="text" id="fieldName" placeholder="Назва поля (напр. Північ-1)" />
     <select id="cropType">
       <option value="">Культура</option>
       <option value="wheat">🌾 Пшениця</option>
@@ -197,421 +534,1226 @@
       <option value="rapeseed">🟡 Ріпак</option>
       <option value="soy">🫘 Соя</option>
       <option value="barley">🌿 Ячмінь</option>
+      <option value="sugar_beet">🫚 Цукр. буряк</option>
+      <option value="potato">🥔 Картопля</option>
+      <option value="oats">🌾 Овес</option>
+      <option value="peas">🫛 Горох</option>
       <option value="fallow">⬜ Пар</option>
     </select>
   </div>
+  <div class="field-row">
+    <input type="date" id="sowingDate" title="Дата посіву" />
+    <input type="date" id="fertilizationDate" title="Дата добрив" />
+    <input type="date" id="harvestDate" title="Планова дата збору" />
+    <select id="soilType" title="Тип ґрунту">
+      <option value="">Ґрунт</option>
+      <option value="chernozem">🟤 Чорнозем</option>
+      <option value="loam">🟫 Суглинок</option>
+      <option value="sand">🟡 Пісок</option>
+      <option value="clay">🔵 Глина</option>
+    </select>
+  </div>
   <div class="area-display" id="areaDisplay">Площа: <span>—</span> га</div>
-  <button class="btn-save" id="saveBtn" onclick="saveField()" disabled>💾 Зберегти поле</button>
-  <div class="hint" id="hintText">Натисніть на карту щоб почати малювати поле</div>
+  <button class="btn-save" id="saveBtn" onclick="saveOrUpdateField()" disabled>💾 Зберегти поле</button>
+  <button class="btn-cancel" id="cancelEditBtn" onclick="cancelEdit()">↩ Скасувати редагування</button>
+  <div class="hint" id="hintText">Натисніть на карту, щоб почати малювати поле</div>
 </div>
 
+<div class="overlay" id="confirmOverlay">
+  <div class="dialog">
+    <p id="confirmText">Ви впевнені, що хочете видалити це поле?</p>
+    <div class="dialog-buttons">
+      <button class="dialog-btn dialog-btn-cancel" onclick="closeConfirm()">Скасувати</button>
+      <button class="dialog-btn dialog-btn-confirm" id="confirmDeleteBtn">🗑 Видалити</button>
+    </div>
+  </div>
+</div>
 <div id="toast"></div>
 
 <script>
 const tg = window.Telegram?.WebApp;
 if (tg) tg.expand();
 
-// ---------- 1. Ініціалізація карти ----------
 const map = L.map('map', { zoomControl: true }).setView([47.5746, 34.4396], 14);
 
-const satellite = L.tileLayer(
-  'https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',
-  { attribution: '© Google', maxZoom: 21 }
+const GIBS = 'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best';
+function gibsUrl(layer, matrix, ext) {
+  return `${GIBS}/${layer}/default/default/GoogleMapsCompatible_${matrix}/{z}/{y}/{x}.${ext}`;
+}
+function overlayTileOpts(maxZoom, opacity, attribution) {
+  return { maxZoom, opacity, attribution, zIndex: 1 };
+}
+
+const esriImagery = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: 'Esri, Maxar', maxZoom: 19, zIndex: 0 });
+const esriTopo = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', { attribution: 'Esri, USGS', maxZoom: 19, zIndex: 0 });
+const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OpenStreetMap', maxZoom: 19, zIndex: 0 });
+esriImagery.addTo(map);
+let activeBaseLayer = 'imagery';
+
+const ndviLayer = L.tileLayer(
+  gibsUrl('MODIS_Terra_NDVI_8Day', 'Level9', 'jpg'),
+  overlayTileOpts(9, 0.82, 'NASA GIBS/MODIS NDVI')
 );
-const hybrid = L.tileLayer(
-  'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
-  { attribution: '© Google', maxZoom: 21 }
+const satelliteLayer = L.tileLayer(
+  gibsUrl('MODIS_Terra_CorrectedReflectance_TrueColor', 'Level9', 'jpg'),
+  overlayTileOpts(9, 0.92, 'NASA GIBS/MODIS True Color')
 );
-const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '© OpenStreetMap', maxZoom: 19
-});
-hybrid.addTo(map);
-L.control.layers({
-  '🛰 Супутник': satellite,
-  '🛰+🗺 Гібрид': hybrid,
-  '🗺 Карта': osm
-}).addTo(map);
+const soilMoistureLayer = L.tileLayer(
+  gibsUrl('LPRM_AMSR2_Surface_Soil_Moisture_C1_Band_Day_Daily', 'Level6', 'png'),
+  overlayTileOpts(6, 0.78, 'NASA GIBS/AMSR2 Soil Moisture')
+);
 
-// ---------- 2. Дані культур ----------
-const CROPS = {
-  wheat:     { emoji: '🌾', name: 'Пшениця',   color: '#f9a825', fill: '#fff176' },
-  corn:      { emoji: '🌽', name: 'Кукурудза',  color: '#ff8f00', fill: '#ffe082' },
-  sunflower: { emoji: '🌻', name: 'Соняшник',   color: '#e65100', fill: '#ffcc02' },
-  rapeseed:  { emoji: '🌼', name: 'Ріпак',      color: '#c8b400', fill: '#ffe600' },
-  soy:       { emoji: '🫘', name: 'Соя',         color: '#2e7d32', fill: '#a5d6a7' },
-  barley:    { emoji: '🌿', name: 'Ячмінь',     color: '#00838f', fill: '#80deea' },
-  fallow:    { emoji: '⬜', name: 'Пар',         color: '#757575', fill: '#e0e0e0' },
-  '':        { emoji: '📍', name: 'Невідомо',   color: '#4caf50', fill: '#81c784' },
-};
+let ndviLayerActive = false, s2LayerActive = false, soilLayerActive = false;
+const overlayLayers = [ndviLayer, soilMoistureLayer, satelliteLayer];
 
-const ICON_HIDE_ZOOM = 15;
-
-// Глобальні змінні
-let pts = [];
-let currentPoly = null;
-let savedFields = [];
-let mode = 'draw';
-let tempMarkers = [];
-
-// Структури для зберігання шарів полів
-let fieldGroups = new Map();        // id -> L.featureGroup (полігони)
-let fieldMarkers = new Map();       // id -> L.marker (іконки)
-
-// Контейнер для всіх іконок (щоб ховати при великому зумі)
-const iconsContainer = L.layerGroup().addTo(map);
-
-// ---------- Допоміжні функції ----------
-function showToast(msg, isError = false) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.style.background = isError ? '#c62828' : '#388e3c';
-  t.classList.add('show');
-  setTimeout(() => {
-    t.classList.remove('show');
-    t.style.background = '#388e3c';
-  }, 2600);
-}
-
-function polyCenter(ptsArr) {
-  const lat = ptsArr.reduce((s, p) => s + p[0], 0) / ptsArr.length;
-  const lng = ptsArr.reduce((s, p) => s + p[1], 0) / ptsArr.length;
-  return [lat, lng];
-}
-
-function makeCropIcon(crop) {
-  const c = CROPS[crop] || CROPS[''];
-  return L.divIcon({
-    className: 'crop-label',
-    html: `<div class="crop-label-inner">
-             <div class="crop-emoji">${c.emoji}</div>
-             <div class="crop-name-tag">${c.name}</div>
-           </div>`,
-    iconSize: [60, 48],
-    iconAnchor: [30, 24],
-  });
-}
-
-// Оновлення видимості іконок при зумі
-function updateIconsVisibility() {
-  const z = map.getZoom();
-  if (z >= ICON_HIDE_ZOOM) {
-    if (map.hasLayer(iconsContainer)) map.removeLayer(iconsContainer);
-  } else {
-    if (!map.hasLayer(iconsContainer)) iconsContainer.addTo(map);
+function enableOverlayLayer(layer) {
+  const attach = () => {
+    map.removeLayer(layer);
+    layer.addTo(map);
+    layer.bringToFront();
+    layer.redraw();
+  };
+  attach();
+  if (!Object.keys(layer._tiles || {}).length) {
+    requestAnimationFrame(() => {
+      attach();
+      if (!Object.keys(layer._tiles || {}).length) setTimeout(attach, 100);
+    });
   }
+}
+
+function bringActiveOverlaysToFront() {
+  if (ndviLayerActive && map.hasLayer(ndviLayer)) ndviLayer.bringToFront();
+  if (soilLayerActive && map.hasLayer(soilMoistureLayer)) soilMoistureLayer.bringToFront();
+  if (s2LayerActive && map.hasLayer(satelliteLayer)) satelliteLayer.bringToFront();
+}
+
+function setBaseLayer(name) {
+  if (name === activeBaseLayer) return;
+  [esriImagery, esriTopo, osm].forEach(l => { if (map.hasLayer(l)) map.removeLayer(l); });
+  const layers = { imagery: esriImagery, topo: esriTopo, osm: osm };
+  layers[name].addTo(map);
+  activeBaseLayer = name;
+  bringActiveOverlaysToFront();
+  document.querySelectorAll('#lsp-esri-imagery,#lsp-esri-topo,#lsp-osm').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.lsp-radio').forEach(el => el.classList.remove('checked'));
+  const m2id = { imagery: 'lsp-esri-imagery', topo: 'lsp-esri-topo', osm: 'lsp-osm' };
+  const r2id = { imagery: 'r-imagery', topo: 'r-topo', osm: 'r-osm' };
+  document.getElementById(m2id[name])?.classList.add('active');
+  document.getElementById(r2id[name])?.classList.add('checked');
+  showToast('🗺 ' + ({ imagery: 'Esri Супутник', topo: 'Esri Топографія', osm: 'OpenStreetMap' })[name]);
+}
+
+function toggleNdviLayer() {
+  const btn = document.getElementById('btn-ndvi-layer');
+  const legend = document.getElementById('ndviLegend');
+  const cb = document.getElementById('cb-ndvi');
+  const item = document.getElementById('lsp-ndvi');
+  if (ndviLayerActive) {
+    map.removeLayer(ndviLayer); btn.classList.remove('active');
+    legend.classList.remove('show'); cb.classList.remove('checked'); item.classList.remove('active');
+    ndviLayerActive = false; showToast('🌿 NDVI вимкнено');
+  } else {
+    enableOverlayLayer(ndviLayer);
+    btn.classList.add('active');
+    legend.classList.add('show'); cb.classList.add('checked'); item.classList.add('active');
+    ndviLayerActive = true; showToast('🌿 NDVI увімкнено (MODIS NASA)');
+  }
+}
+
+function toggleSoilLayer() {
+  const btn = document.getElementById('btn-soil-layer');
+  const legend = document.getElementById('soilLegend');
+  const cb = document.getElementById('cb-soil');
+  const item = document.getElementById('lsp-soil');
+  if (soilLayerActive) {
+    map.removeLayer(soilMoistureLayer); btn.classList.remove('active');
+    legend.classList.remove('show'); cb.classList.remove('checked'); item.classList.remove('active');
+    soilLayerActive = false; showToast('💧 Вологість вимкнено');
+  } else {
+    enableOverlayLayer(soilMoistureLayer);
+    btn.classList.add('active');
+    legend.classList.add('show'); cb.classList.add('checked'); item.classList.add('active');
+    soilLayerActive = true; showToast('💧 Вологість ґрунту увімкнено (AMSR2 NASA)');
+  }
+}
+
+function toggleSentinel2() {
+  const btn = document.getElementById('btn-s2-layer');
+  const cb = document.getElementById('cb-s2');
+  const item = document.getElementById('lsp-s2');
+  if (s2LayerActive) {
+    map.removeLayer(satelliteLayer); btn.classList.remove('active');
+    cb.classList.remove('checked'); item.classList.remove('active');
+    s2LayerActive = false; showToast('🛰 MODIS RGB вимкнено');
+  } else {
+    enableOverlayLayer(satelliteLayer);
+    btn.classList.add('active');
+    cb.classList.add('checked'); item.classList.add('active');
+    s2LayerActive = true; showToast('🛰 MODIS True Color увімкнено');
+  }
+}
+
+overlayLayers.forEach(layer => {
+  layer.on('tileerror', () => {
+    if (!layer._gibsErrorShown) {
+      layer._gibsErrorShown = true;
+      showToast('⚠️ Шар тимчасово недоступний. Спробуйте пізніше.', true);
+    }
+  });
+});
+
+function toggleLayerPanel() {
+  const p = document.getElementById('layerPanel'), b = document.getElementById('btn-layers-toggle');
+  const show = !p.classList.contains('show');
+  closeAllFloatPanels();
+  if (show) { p.classList.add('show'); b.classList.add('active'); }
+}
+
+let weatherLoaded = false;
+function toggleWeatherWidget() {
+  const w = document.getElementById('weatherWidget'), b = document.getElementById('btn-weather-toggle');
+  const show = !w.classList.contains('show');
+  closeAllFloatPanels();
+  if (show) {
+    w.classList.add('show'); b.classList.add('active');
+    if (!weatherLoaded) fetchWeatherForCenter();
+  }
+}
+
+async function fetchWeatherForCenter() {
+  const c = map.getCenter();
+  const container = document.getElementById('weatherContent');
+  container.innerHTML = '<div class="rain-loading">⏳ Завантаження...</div>';
+  try {
+    const url = 'https://api.open-meteo.com/v1/forecast?latitude='+c.lat.toFixed(4)+'&longitude='+c.lng.toFixed(4)+'&current=temperature_2m,weathercode,windspeed_10m,relative_humidity_2m,precipitation&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=auto&forecast_days=3';
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('HTTP '+resp.status);
+    const d = await resp.json(), cur = d.current, daily = d.daily;
+    const em = wxEmoji(cur.weathercode), desc = wxDesc(cur.weathercode);
+    const spray = getSprayWindow(cur.windspeed_10m, cur.relative_humidity_2m, cur.precipitation||0, cur.temperature_2m);
+    const dayN = ['Нд','Пн','Вт','Ср','Чт','Пт','Сб'];
+    let fc = '<div style="display:flex;gap:7px;margin-top:7px;">';
+    for (let i = 0; i < Math.min(3, daily.time.length); i++) {
+      const dt = new Date(daily.time[i]);
+      const pr = (daily.precipitation_sum[i]||0).toFixed(0);
+      const tx = Math.round(daily.temperature_2m_max[i]||0), tn = Math.round(daily.temperature_2m_min[i]||0);
+      fc += '<div style="background:#1a3a2a;border-radius:7px;padding:5px 7px;text-align:center;flex:1;font-size:10px;"><div style="color:#81c784;font-weight:700;">'+dayN[dt.getDay()]+'</div><div style="font-size:15px;">'+em+'</div><div style="color:#a5d6a7;">'+tx+'°/'+tn+'°</div><div style="color:#4d8c51;">'+pr+'мм</div></div>';
+    }
+    fc += '</div>';
+    const minTemps = daily.temperature_2m_min || [];
+    const minMin = minTemps.length ? Math.min(...minTemps) : 999;
+    let alertHtml = '';
+    if (minMin < 0) alertHtml = '<div class="weather-alert">❄️ Заморозки! Мін: '+minMin+'°C</div>';
+    else if (spray.cls === 'spray-ok') alertHtml = '<div class="weather-good">'+spray.text+'</div>';
+    else alertHtml = '<div class="weather-alert">'+spray.text+'</div>';
+    container.innerHTML = '<div class="weather-row"><div style="font-size:22px">'+em+'</div><div><div class="weather-temp">'+Math.round(cur.temperature_2m)+'°C</div><div class="weather-desc">'+desc+'</div></div></div><div class="weather-meta"><span>💨 '+Math.round(cur.windspeed_10m)+' км/г</span><span>💧 '+cur.relative_humidity_2m+'%</span></div>'+fc+alertHtml+'<div id="wxSpray48"></div><div style="font-size:9px;color:#3a5a3a;margin-top:5px;text-align:right;">open-meteo.com</div>';
+    fetchSpray48h(c.lat, c.lng, 'wxSpray48');
+    weatherLoaded = true;
+  } catch(e) { container.innerHTML = '<div class="rain-loading">⚠️ '+e.message+'</div>'; }
+}
+
+function wxEmoji(c) {
+  if (c===0) return '☀️'; if (c<=2) return '🌤'; if (c<=3) return '☁️';
+  if (c<=49) return '🌫'; if (c<=67) return '🌧'; if (c<=77) return '❄️';
+  if (c<=82) return '🌦'; if (c<=86) return '🌨'; if (c<=99) return '⛈'; return '🌡';
+}
+function wxDesc(c) {
+  if (c===0) return 'Ясно'; if (c===1) return 'Переважно ясно';
+  if (c===2) return 'Мінлива хмарність'; if (c===3) return 'Хмарно';
+  if (c<=49) return 'Туман'; if (c<=67) return 'Дощ'; if (c<=77) return 'Сніг';
+  if (c<=82) return 'Злива'; if (c<=86) return 'Снігопад'; if (c<=99) return 'Гроза'; return 'Змінна';
+}
+
+map.on('moveend', () => {
+  if (document.getElementById('weatherWidget').classList.contains('show')) { weatherLoaded=false; fetchWeatherForCenter(); }
+  if (document.getElementById('agroAdvisor').classList.contains('show')) { agroLoaded=false; fetchAgroAdvisor(); }
+});
+map.on('click', () => {
+  document.getElementById('layerPanel').classList.remove('show');
+  document.getElementById('btn-layers-toggle').classList.remove('active');
+});
+
+const CROPS = {
+  wheat:      { emoji: '🌾', name: 'Пшениця', color: '#f9a825', fill: '#fff176', gddBase: 0, gddHarvest: 1800, stages: ['Проростання','Кущіння','Вихід в трубку','Колосіння','Дозрівання'] },
+  corn:       { emoji: '🌽', name: 'Кукурудза', color: '#ff8f00', fill: '#ffe082', gddBase: 10, gddHarvest: 2700, stages: ['Всходи','3-5 листків','7-8 листків','Метелка','Дозрівання'] },
+  sunflower:  { emoji: '🌻', name: 'Соняшник', color: '#e65100', fill: '#ffcc02', gddBase: 6, gddHarvest: 2200, stages: ['Всходи','4-6 листків','Бутон','Цвітіння','Дозрівання'] },
+  rapeseed:   { emoji: '🌼', name: 'Ріпак', color: '#c8b400', fill: '#ffe600', gddBase: 5, gddHarvest: 1600, stages: ['Всходи','Розетка','Стебло','Цвітіння','Дозрівання'] },
+  soy:        { emoji: '🫘', name: 'Соя', color: '#2e7d32', fill: '#a5d6a7', gddBase: 10, gddHarvest: 2000, stages: ['Всходи','Вегетація','Бутони','Цвітіння','Дозрівання'] },
+  barley:     { emoji: '🌿', name: 'Ячмінь', color: '#00838f', fill: '#80deea', gddBase: 0, gddHarvest: 1500, stages: ['Всходи','Кущіння','Колосіння','Молочна','Дозрівання'] },
+  sugar_beet: { emoji: '🫚', name: 'Цукр. буряк', color: '#880e4f', fill: '#f48fb1', gddBase: 5, gddHarvest: 2400, stages: ['Всходи','4-6 листків','Замикання','Ріст кореня','Дозрівання'] },
+  potato:     { emoji: '🥔', name: 'Картопля', color: '#6d4c41', fill: '#d7ccc8', gddBase: 7, gddHarvest: 1800, stages: ['Проростання','Всходи','Бутонізація','Цвітіння','Дозрівання'] },
+  oats:       { emoji: '🌾', name: 'Овес', color: '#c0a050', fill: '#fff8e1', gddBase: 0, gddHarvest: 1400, stages: ['Всходи','Кущіння','Колосіння','Молочна','Дозрівання'] },
+  peas:       { emoji: '🫛', name: 'Горох', color: '#558b2f', fill: '#c5e1a5', gddBase: 4, gddHarvest: 1200, stages: ['Всходи','Вегетація','Бутони','Цвітіння','Дозрівання'] },
+  fallow:     { emoji: '⬜', name: 'Пар', color: '#757575', fill: '#e0e0e0', gddBase: 0, gddHarvest: 0, stages: [] },
+  '':         { emoji: '📍', name: 'Невідомо', color: '#4caf50', fill: '#81c784', gddBase: 5, gddHarvest: 0, stages: [] }
+};
+const SOILS = {
+  chernozem: { name: 'Чорнозем', waterCap: 1.0, nFactor: 1.0 },
+  loam:      { name: 'Суглинок', waterCap: 0.85, nFactor: 0.9 },
+  sand:      { name: 'Пісок', waterCap: 0.55, nFactor: 0.7 },
+  clay:      { name: 'Глина', waterCap: 0.95, nFactor: 0.85 },
+  '':        { name: '—', waterCap: 0.8, nFactor: 0.85 }
+};
+const OP_TYPES = {
+  sow:    { emoji: '🌱', name: 'Посів' },
+  fert:   { emoji: '🧪', name: 'Добрива' },
+  spray:  { emoji: '💨', name: 'Обприскування' },
+  harvest:{ emoji: '🚜', name: 'Збір' },
+  inspect:{ emoji: '🔍', name: 'Огляд' },
+  other:  { emoji: '📝', name: 'Інше' }
+};
+const ICON_HIDE_ZOOM = 15;
+let pts=[], currentPoly=null, savedFields=[], mode='draw', tempMarkers=[];
+let editingFieldId=null, fieldGroups=new Map(), fieldMarkers=new Map();
+const iconsContainer = L.layerGroup().addTo(map);
+let pendingDeleteId=null;
+let gpsWatchId=null, gpsTracking=false;
+
+function showToast(msg, isError=false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.background = isError?'#c62828':'#2e7d32';
+  t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2600);
+}
+function polyCenter(a) { return [a.reduce((s,p)=>s+p[0],0)/a.length, a.reduce((s,p)=>s+p[1],0)/a.length]; }
+function makeCropIcon(crop) {
+  const c=CROPS[crop]||CROPS[''];
+  return L.divIcon({ className:'crop-label', html:'<div class="crop-label-inner"><div class="crop-emoji">'+c.emoji+'</div><div class="crop-name-tag">'+c.name+'</div></div>', iconSize:[60,48], iconAnchor:[30,24] });
+}
+function updateIconsVisibility() {
+  const z=map.getZoom();
+  if(z>=ICON_HIDE_ZOOM){if(map.hasLayer(iconsContainer))map.removeLayer(iconsContainer);}
+  else{if(!map.hasLayer(iconsContainer))iconsContainer.addTo(map);}
 }
 map.on('zoom', updateIconsVisibility);
 
-// Обчислення площі
-function calcArea(ptsArr) {
-  if (ptsArr.length < 3) return 0;
-  const R = 6371000;
-  let area = 0;
-  const n = ptsArr.length;
-  for (let i = 0; i < n; i++) {
-    const [lat1, lon1] = ptsArr[i];
-    const [lat2, lon2] = ptsArr[(i+1) % n];
-    const φ1 = lat1 * Math.PI/180, φ2 = lat2 * Math.PI/180;
-    const λ2 = lon2 * Math.PI/180, λ1 = lon1 * Math.PI/180;
-    area += (λ2 - λ1) * (2 + Math.sin(φ1) + Math.sin(φ2));
+function calcArea(a) {
+  if(a.length<3)return 0;
+  const R=6371000; let area=0; const n=a.length;
+  for(let i=0;i<n;i++){
+    const [la1,lo1]=a[i],[la2,lo2]=a[(i+1)%n];
+    const f1=la1*Math.PI/180,f2=la2*Math.PI/180,l2=lo2*Math.PI/180,l1=lo1*Math.PI/180;
+    area+=(l2-l1)*(2+Math.sin(f1)+Math.sin(f2));
   }
-  return ((Math.abs(area) * R * R / 2) / 10000).toFixed(2);
+  return ((Math.abs(area)*R*R/2)/10000).toFixed(2);
+}
+function escapeHtml(s){if(!s)return'';return s.replace(/[&<>]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;'})[m]);}
+
+function updateHeaderStats() {
+  const tot=savedFields.length;
+  const area=savedFields.reduce((s,f)=>s+parseFloat(f.area||0),0).toFixed(1);
+  document.getElementById('stat-fields').textContent=tot;
+  document.getElementById('stat-area').textContent=area;
+  document.getElementById('total-area-side').textContent=area+' га';
+  updateAlertBadge();
 }
 
-function escapeHtml(str) {
-  if (!str) return '';
-  return str.replace(/[&<>]/g, function(m) {
-    if (m === '&') return '&amp;';
-    if (m === '<') return '&lt;';
-    if (m === '>') return '&gt;';
-    return m;
+function calcGDD(sowingDate, baseTemp) {
+  if (!sowingDate) return 0;
+  const start = new Date(sowingDate);
+  const today = new Date();
+  if (start > today) return 0;
+  let gdd = 0;
+  const d = new Date(start);
+  while (d <= today) {
+    const month = d.getMonth();
+    const estTmax = 5 + 20 * Math.sin((month - 2) * Math.PI / 6);
+    const estTmin = estTmax - 8;
+    const tavg = (estTmax + estTmin) / 2;
+    if (tavg > baseTemp) gdd += tavg - baseTemp;
+    d.setDate(d.getDate() + 1);
+  }
+  return Math.round(gdd);
+}
+
+function getGrowthStage(crop, gdd) {
+  const c = CROPS[crop] || CROPS[''];
+  if (!c.stages.length || !c.gddHarvest) return { stage: '—', pct: 0 };
+  const pct = Math.min(100, Math.round((gdd / c.gddHarvest) * 100));
+  const idx = Math.min(c.stages.length - 1, Math.floor((pct / 100) * c.stages.length));
+  return { stage: c.stages[idx], pct };
+}
+
+function getSprayWindow(wind, humidity, precip, temp) {
+  if (wind > 25 || precip > 0.5) return { cls: 'spray-bad', text: '❌ Не обприскувати (вітер/дощ)', level: 'bad' };
+  if (wind > 15 || humidity > 85 || temp > 28) return { cls: 'spray-warn', text: '⚠️ Обмежено (вітер/вологість)', level: 'warn' };
+  if (wind <= 10 && humidity >= 50 && humidity <= 80 && temp >= 12 && temp <= 25) return { cls: 'spray-ok', text: '✅ Добрі умови для обприскування', level: 'ok' };
+  return { cls: 'spray-warn', text: '⚠️ Середні умови', level: 'warn' };
+}
+
+function getFungalRisk(temp, humidity) {
+  if (temp >= 15 && temp <= 25 && humidity >= 80) return { level: 'high', text: '🔴 Високий ризик грибкових хвороб' };
+  if (temp >= 12 && temp <= 28 && humidity >= 70) return { level: 'mid', text: '🟡 Помірний фіто-санітарний ризик' };
+  return { level: 'low', text: '🟢 Низький ризик хвороб' };
+}
+
+function closeAllFloatPanels() {
+  ['dashboardPanel','calendarPanel','layerPanel','weatherWidget','agroAdvisor'].forEach(id => {
+    document.getElementById(id)?.classList.remove('show');
+  });
+  ['btn-dashboard-toggle','btn-calendar-toggle','btn-layers-toggle','btn-weather-toggle','btn-agro-toggle'].forEach(id => {
+    document.getElementById(id)?.classList.remove('active');
   });
 }
 
-// ---------- ВИДАЛЕННЯ ПОЛЯ (повне видалення) ----------
-function deleteFieldById(fieldId) {
-  // Знаходимо поле в масиві
-  const fieldIndex = savedFields.findIndex(f => f.id === fieldId);
-  if (fieldIndex === -1) {
-    showToast("⚠️ Поле не знайдено", true);
+function toggleDashboard(force) {
+  const p = document.getElementById('dashboardPanel'), b = document.getElementById('btn-dashboard-toggle');
+  if (force === false) { p.classList.remove('show'); b.classList.remove('active'); return; }
+  const show = !p.classList.contains('show');
+  closeAllFloatPanels();
+  if (show) { p.classList.add('show'); b.classList.add('active'); renderDashboard(); }
+}
+
+function toggleCalendar(force) {
+  const p = document.getElementById('calendarPanel'), b = document.getElementById('btn-calendar-toggle');
+  if (force === false) { p.classList.remove('show'); b.classList.remove('active'); return; }
+  const show = !p.classList.contains('show');
+  closeAllFloatPanels();
+  if (show) { p.classList.add('show'); b.classList.add('active'); renderCalendar(); }
+}
+
+function getAllCalendarEvents() {
+  const events = [];
+  const today = new Date(); today.setHours(0,0,0,0);
+  savedFields.forEach(f => {
+    const c = CROPS[f.crop] || CROPS[''];
+    if (f.sowingDate) events.push({ date: f.sowingDate, type: 'sow', field: f, label: c.emoji+' Посів: '+f.name });
+    if (f.fertilizationDate) events.push({ date: f.fertilizationDate, type: 'fert', field: f, label: '🧪 Добрива: '+f.name });
+    if (f.harvestDate) events.push({ date: f.harvestDate, type: 'harvest', field: f, label: '🚜 Збір: '+f.name });
+    (f.operations || []).forEach(op => {
+      events.push({ date: op.date, type: op.type, field: f, label: (OP_TYPES[op.type]?.emoji||'📝')+' '+op.product+' — '+f.name, op });
+    });
+  });
+  return events.sort((a,b) => a.date.localeCompare(b.date));
+}
+
+function renderCalendar() {
+  const container = document.getElementById('calendarContent');
+  const events = getAllCalendarEvents();
+  const today = new Date().toISOString().split('T')[0];
+  const in7 = new Date(Date.now() + 7*86400000).toISOString().split('T')[0];
+  if (!events.length) { container.innerHTML = '<div class="empty-list" style="padding:16px">📅 Немає запланованих робіт.<br><small>Додайте дати посіву/збору або операції в полі.</small></div>'; return; }
+  const upcoming = events.filter(e => e.date >= today);
+  const past = events.filter(e => e.date < today).slice(-3);
+  let html = '<div style="font-size:10px;color:#4d8c51;margin-bottom:6px;">Найближчі роботи</div>';
+  if (!upcoming.length) html += '<div style="font-size:11px;color:#5a8a5a;margin-bottom:8px;">Немає майбутніх подій</div>';
+  upcoming.slice(0, 12).forEach(e => {
+    const cls = e.date === today ? 'today' : e.date <= in7 ? 'soon' : '';
+    const dt = new Date(e.date).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short', weekday: 'short' });
+    html += '<div class="cal-item '+cls+'" onclick="focusField(\''+e.field.id+'\')"><div class="cal-date">'+dt+'</div>'+escapeHtml(e.label)+'</div>';
+  });
+  if (past.length) {
+    html += '<div style="font-size:10px;color:#4d8c51;margin:10px 0 6px;">Нещодавно</div>';
+    past.forEach(e => {
+      const dt = new Date(e.date).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' });
+      html += '<div class="cal-item past" onclick="focusField(\''+e.field.id+'\')"><div class="cal-date">'+dt+'</div>'+escapeHtml(e.label)+'</div>';
+    });
+  }
+  container.innerHTML = html;
+}
+
+function renderDashboard() {
+  const container = document.getElementById('dashboardContent');
+  const totalArea = savedFields.reduce((s,f) => s + parseFloat(f.area||0), 0);
+  const byCrop = {};
+  savedFields.forEach(f => {
+    const k = f.crop || 'unknown';
+    byCrop[k] = (byCrop[k] || 0) + parseFloat(f.area||0);
+  });
+  let cropHtml = '<div style="font-size:10px;color:#4d8c51;margin-bottom:6px;">Площа за культурами</div>';
+  if (!savedFields.length) cropHtml = '<div class="empty-list" style="padding:12px">Немає полів</div>';
+  else Object.entries(byCrop).sort((a,b)=>b[1]-a[1]).forEach(([crop, area]) => {
+    const c = CROPS[crop] || CROPS[''];
+    const pct = totalArea ? Math.round(area/totalArea*100) : 0;
+    cropHtml += '<div class="dash-crop-row"><span>'+c.emoji+' '+c.name+'</span><div class="dash-crop-bar"><div class="dash-crop-fill" style="width:'+pct+'%;background:'+c.color+'"></div></div><span>'+area.toFixed(1)+' га</span></div>';
+  });
+  const events = getAllCalendarEvents();
+  const today = new Date().toISOString().split('T')[0];
+  const in7 = new Date(Date.now() + 7*86400000).toISOString().split('T')[0];
+  const weekTasks = events.filter(e => e.date >= today && e.date <= in7);
+  let tasksHtml = '<div style="font-size:10px;color:#4d8c51;margin:10px 0 6px;">Роботи на 7 днів: <b style="color:#a5d6a7">'+weekTasks.length+'</b></div>';
+  weekTasks.slice(0, 5).forEach(e => {
+    tasksHtml += '<div class="cal-item soon" style="cursor:pointer" onclick="focusField(\''+e.field.id+'\')">'+escapeHtml(e.label)+' <span class="cal-date">'+e.date+'</span></div>';
+  });
+  const withSow = savedFields.filter(f => f.sowingDate && f.crop && f.crop !== 'fallow');
+  let gddHtml = '<div style="font-size:10px;color:#4d8c51;margin:10px 0 6px;">Фази росту</div>';
+  withSow.slice(0, 4).forEach(f => {
+    const c = CROPS[f.crop];
+    const gdd = calcGDD(f.sowingDate, c.gddBase);
+    const gs = getGrowthStage(f.crop, gdd);
+    gddHtml += '<div style="font-size:11px;margin-bottom:3px;color:#81c784">'+c.emoji+' '+escapeHtml(f.name)+': <b style="color:#a5d6a7">'+gs.stage+'</b> ('+gs.pct+'%)</div>';
+  });
+  if (!withSow.length) gddHtml += '<div style="font-size:11px;color:#5a8a5a">Вкажіть дати посіву</div>';
+  container.innerHTML = cropHtml + tasksHtml + gddHtml + '<div id="dashSpray48"></div>';
+  fetchSpray48h(map.getCenter().lat, map.getCenter().lng, 'dashSpray48');
+}
+
+async function fetchSpray48h(lat, lng, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = '<div class="rain-loading" style="font-size:10px">⏳ Вікно 48г...</div>';
+  try {
+    const url = 'https://api.open-meteo.com/v1/forecast?latitude='+lat.toFixed(4)+'&longitude='+lng.toFixed(4)+'&hourly=temperature_2m,relative_humidity_2m,windspeed_10m,precipitation&timezone=auto&forecast_hours=48';
+    const r = await fetch(url);
+    const d = await r.json();
+    const times = d.hourly.time || [];
+    let bestWindows = [], html = '<div style="font-size:10px;color:#4d8c51;margin:10px 0 6px;">🧪 Обприскування 48 год</div><div class="spray-timeline">';
+    let streak = null;
+    for (let i = 0; i < Math.min(48, times.length); i++) {
+      const w = getSprayWindow(d.hourly.windspeed_10m[i], d.hourly.relative_humidity_2m[i], d.hourly.precipitation[i]||0, d.hourly.temperature_2m[i]);
+      const dt = new Date(times[i]);
+      const lbl = dt.toLocaleString('uk-UA', { weekday:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+      const barCls = w.level === 'ok' ? 'spray-h-ok' : w.level === 'warn' ? 'spray-h-warn' : 'spray-h-bad';
+      if (i < 16) html += '<div class="spray-hour"><span style="width:72px;color:#5a8a5a">'+lbl+'</span><div class="spray-hour-bar '+barCls+'"></div></div>';
+      if (w.level === 'ok') {
+        if (!streak) streak = { start: lbl, hours: 1 };
+        else streak.hours++;
+      } else if (streak && streak.hours >= 2) { bestWindows.push(streak); streak = null; }
+      else streak = null;
+    }
+    if (streak && streak.hours >= 2) bestWindows.push(streak);
+    html += '</div>';
+    if (bestWindows.length) html += '<div class="agro-tip" style="margin-top:6px"><b>✅ Краще вікно</b>'+bestWindows.slice(0,2).map(w=>w.start+' ('+w.hours+' год)').join('<br>')+'</div>';
+    else html += '<div class="agro-tip warn" style="margin-top:6px"><b>⚠️ Немає ідеального вікна</b>Оберіть години з зеленими смугами</div>';
+    container.innerHTML = html;
+  } catch(e) { container.innerHTML = ''; }
+}
+
+function estimateFieldHealth(ndvi, waterBalance) {
+  const score = (ndvi * 0.6) + (Math.min(waterBalance, 1) * 0.4);
+  if (score >= 0.55) return { cls: 'good', label: '🟢 Добрий стан' };
+  if (score >= 0.35) return { cls: 'mid', label: '🟡 Середній' };
+  return { cls: 'low', label: '🔴 Потребує уваги' };
+}
+
+let agroLoaded = false;
+function toggleAgroAdvisor() {
+  const p = document.getElementById('agroAdvisor'), b = document.getElementById('btn-agro-toggle');
+  const show = !p.classList.contains('show');
+  closeAllFloatPanels();
+  if (show) {
+    p.classList.add('show'); b.classList.add('active');
+    if (!agroLoaded) fetchAgroAdvisor();
+  }
+}
+
+async function fetchAgroAdvisor() {
+  const c = map.getCenter();
+  const container = document.getElementById('agroAdvisorContent');
+  container.innerHTML = '<div class="rain-loading">⏳ Аналіз...</div>';
+  try {
+    const url = 'https://api.open-meteo.com/v1/forecast?latitude='+c.lat.toFixed(4)+'&longitude='+c.lng.toFixed(4)+'&current=temperature_2m,windspeed_10m,relative_humidity_2m,precipitation&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,et0_fao_evapotranspiration&timezone=auto&forecast_days=7';
+    const resp = await fetch(url);
+    const d = await resp.json();
+    const cur = d.current, daily = d.daily;
+    const prec7 = (daily.precipitation_sum || []).reduce((s,v)=>s+(v||0),0);
+    const et7 = (daily.et0_fao_evapotranspiration || []).reduce((s,v)=>s+(v||0),0);
+    const balance = (prec7 - et7).toFixed(1);
+    const spray = getSprayWindow(cur.windspeed_10m, cur.relative_humidity_2m, cur.precipitation||0, cur.temperature_2m);
+    const minTemps = daily.temperature_2m_min || [];
+    const minMin = minTemps.length ? Math.min(...minTemps) : 99;
+    let tips = '';
+    if (minMin < 0) tips += '<div class="agro-tip danger"><b>❄️ Заморозки</b>Мін. '+minMin+'°C. Захистіть посіви або відкладіть обприскування.</div>';
+    if (parseFloat(balance) < -15) tips += '<div class="agro-tip warn"><b>🏜 Дефіцит вологи</b>Опади − ET₀ = '+balance+' мм за 7 дн. Розгляньте полив.</div>';
+    else if (parseFloat(balance) > 20) tips += '<div class="agro-tip info"><b>💧 Надлишок вологи</b>+'+balance+' мм. Уникайте техніки на полі.</div>';
+    else tips += '<div class="agro-tip"><b>💧 Водний баланс</b>Опади − ET₀ = '+balance+' мм — норма.</div>';
+    tips += '<div class="agro-tip"><b>🧪 Обприскування</b><span class="'+spray.cls+' spray-badge">'+spray.text+'</span></div>';
+    const fungal = getFungalRisk(cur.temperature_2m, cur.relative_humidity_2m);
+    const fCls = fungal.level === 'high' ? 'danger' : fungal.level === 'mid' ? 'warn' : '';
+    tips += '<div class="agro-tip '+fCls+'"><b>🦠 Фіто-ризик</b>'+fungal.text+'</div>';
+    if (savedFields.length) {
+      const withSow = savedFields.filter(f => f.sowingDate && f.crop && f.crop !== 'fallow');
+      if (withSow.length) {
+        tips += '<div class="agro-tip info"><b>📊 Поля з посівом</b>';
+        withSow.slice(0, 3).forEach(f => {
+          const cr = CROPS[f.crop] || CROPS[''];
+          const gdd = calcGDD(f.sowingDate, cr.gddBase);
+          const gs = getGrowthStage(f.crop, gdd);
+          tips += escapeHtml(f.name)+': GDD '+gdd+' · '+gs.stage+'<br>';
+        });
+        if (withSow.length > 3) tips += '...ще '+(withSow.length-3)+' полів';
+        tips += '</div>';
+      }
+    }
+    container.innerHTML = '<div class="agro-metrics"><div class="agro-metric"><div class="agro-metric-val">'+prec7.toFixed(0)+'</div><div class="agro-metric-lbl">Опади 7д, мм</div></div><div class="agro-metric"><div class="agro-metric-val">'+et7.toFixed(0)+'</div><div class="agro-metric-lbl">ET₀ 7д, мм</div></div><div class="agro-metric"><div class="agro-metric-val">'+balance+'</div><div class="agro-metric-lbl">Баланс, мм</div></div><div class="agro-metric"><div class="agro-metric-val">'+Math.round(cur.windspeed_10m)+'</div><div class="agro-metric-lbl">Вітер, км/г</div></div></div>'+tips+'<div id="agroSpray48"></div><div style="font-size:9px;color:#3a5a3a;margin-top:5px;text-align:right;">open-meteo.com · FAO ET₀</div>';
+    fetchSpray48h(c.lat, c.lng, 'agroSpray48');
+    agroLoaded = true;
+    updateAlertBadge(d, balance, minMin);
+  } catch(e) { container.innerHTML = '<div class="rain-loading">⚠️ '+e.message+'</div>'; }
+}
+
+function updateAlertBadge(weatherData, balance, minMin) {
+  let alerts = 0;
+  if (minMin !== undefined && minMin < 0) alerts++;
+  if (balance !== undefined && parseFloat(balance) < -15) alerts++;
+  if (weatherData?.current?.windspeed_10m > 25) alerts++;
+  if (weatherData?.current) {
+    const fungal = getFungalRisk(weatherData.current.temperature_2m, weatherData.current.relative_humidity_2m);
+    if (fungal.level === 'high') alerts++;
+  }
+  const el = document.getElementById('stat-alerts');
+  if (alerts > 0) {
+    el.style.display = '';
+    document.getElementById('stat-alert-count').textContent = alerts;
+  } else el.style.display = 'none';
+}
+
+function computeBoundingRectangle(a) {
+  if(a.length<3)return a;
+  const ct=polyCenter(a);
+  const x=a.map(p=>p[1]-ct[1]),y=a.map(p=>p[0]-ct[0]);
+  const cxx=x.reduce((s,v)=>s+v*v,0)/x.length,cyy=y.reduce((s,v)=>s+v*v,0)/y.length;
+  const cxy=x.reduce((s,v,i)=>s+v*y[i],0)/x.length;
+  const th=0.5*Math.atan2(2*cxy,cxx-cyy),cos=Math.cos(th),sin=Math.sin(th);
+  const px=a.map(p=>(p[1]-ct[1])*cos+(p[0]-ct[0])*sin);
+  const py=a.map(p=>-(p[1]-ct[1])*sin+(p[0]-ct[0])*cos);
+  const mx=Math.min(...px),Mx=Math.max(...px),my=Math.min(...py),My=Math.max(...py);
+  return[[ct[0]+my*cos-mx*sin,ct[1]+mx*cos+my*sin],[ct[0]+My*cos-mx*sin,ct[1]+mx*cos+My*sin],[ct[0]+My*cos-Mx*sin,ct[1]+Mx*cos+My*sin],[ct[0]+my*cos-Mx*sin,ct[1]+Mx*cos+my*sin]];
+}
+function makeRectangle() {
+  if(pts.length<3){showToast('Потрібно хоча б 3 точки',true);return;}
+  pts=computeBoundingRectangle(pts);
+  tempMarkers.forEach(m=>map.removeLayer(m));tempMarkers=[];
+  if(currentPoly)map.removeLayer(currentPoly);
+  currentPoly=L.polygon(pts,{color:'#4caf50',fillColor:'#81c784',fillOpacity:0.3,weight:3,dashArray:'5,5'}).addTo(map);
+  pts.forEach(p=>{const m=L.circleMarker(p,{radius:5,color:'#4caf50',fillColor:'#a5d6a7',fillOpacity:1,weight:2}).addTo(map);tempMarkers.push(m);});
+  updateAreaDisplay();updateHint();checkSaveBtn();
+  showToast('🔲 Поле вирівняно прямокутником');
+}
+
+async function fetchRainHistory(lat,lng,containerId) {
+  const container=document.getElementById(containerId);
+  if(!container)return;
+  container.innerHTML='<div class="rain-loading">⏳ Завантаження опадів...</div>';
+  try {
+    const today=new Date();
+    const ed=new Date(today.getTime()-2*86400000).toISOString().split('T')[0];
+    const sd=new Date(today.getTime()-9*86400000).toISOString().split('T')[0];
+    const url='https://archive-api.open-meteo.com/v1/archive?latitude='+lat+'&longitude='+lng+'&start_date='+sd+'&end_date='+ed+'&daily=precipitation_sum&timezone=auto';
+    const resp=await fetch(url);if(!resp.ok)throw new Error('HTTP '+resp.status);
+    const data=await resp.json();if(!data.daily?.time)throw new Error('No data');
+    const days=data.daily.time,prec=data.daily.precipitation_sum;
+    const total=prec.reduce((s,v)=>s+(v||0),0).toFixed(1);
+    let html='<div style="margin-top:8px"><b>🌧 Опади за 7 днів</b> (всього: '+total+' мм)<table class="rain-table">';
+    for(let i=0;i<days.length;i++){
+      const dt=new Date(days[i]).toLocaleDateString('uk-UA',{day:'numeric',month:'short'});
+      const mm=prec[i]!=null?prec[i].toFixed(1):'—';
+      const bw=prec[i]>0?Math.min(prec[i]*4,60):0;
+      const bar=bw>0?'<span style="display:inline-block;width:'+bw+'px;height:6px;background:#42a5f5;border-radius:3px;margin-left:4px;vertical-align:middle"></span>':'';
+      html+='<tr><td>'+dt+'</td><td>'+mm+' мм'+bar+'</td></tr>';
+    }
+    html+='</table></div>';
+    container.innerHTML=html;
+  } catch(e){container.innerHTML='<div class="rain-loading">⚠️ Помилка: '+e.message+'</div>';}
+}
+
+async function fetchNDVI(lat, lng, containerId, canvasId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = '<div class="rain-loading">🌿 Аналіз рослинності...</div>';
+  try {
+    const ed = new Date(Date.now() - 2 * 86400000).toISOString().split('T')[0];
+    const sd = new Date(Date.now() - 32 * 86400000).toISOString().split('T')[0];
+    const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lng}&start_date=${sd}&end_date=${ed}&daily=precipitation_sum,et0_fao_evapotranspiration,temperature_2m_max&timezone=auto`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    const prec = data.daily.precipitation_sum || [];
+    const et0 = data.daily.et0_fao_evapotranspiration || [];
+    const tmax = data.daily.temperature_2m_max || [];
+    
+    const ndviValues = [];
+    const dates = [];
+    for (let i = 0; i < prec.length; i++) {
+      const tp = prec[i] || 0;
+      const te = et0[i] || 0;
+      const at = tmax[i] || 20;
+      const wb = te > 0 ? Math.min(tp / te, 2) : 0;
+      const tf = (at >= 5 && at <= 35) ? 1 - Math.abs(at - 20) / 30 : 0.2;
+      let ndvi = Math.max(0, Math.min(0.95, (wb * 0.6 + tf * 0.4) * 0.85));
+      ndviValues.push(ndvi);
+      dates.push(data.daily.time[i]);
+    }
+    
+    const lastNDVI = ndviValues[ndviValues.length - 1];
+    const nr = lastNDVI.toFixed(2);
+    const pct = Math.round((lastNDVI / 0.95) * 100);
+    let st = '', sc = '';
+    if (lastNDVI >= 0.7) { st = '🟢 Відмінна'; sc = '#1a9850'; }
+    else if (lastNDVI >= 0.5) { st = '🟡 Добра'; sc = '#91cf60'; }
+    else if (lastNDVI >= 0.3) { st = '🟠 Помірна'; sc = '#fee08b'; }
+    else if (lastNDVI >= 0.1) { st = '🔴 Слабка'; sc = '#fc8d59'; }
+    else { st = '⚫ Пар/ґрунт'; sc = '#d73027'; }
+    
+    container.innerHTML = `
+      <div class="ndvi-value-block">
+        <b>🌿 NDVI зараз: ${nr}</b>
+        <div class="ndvi-status" style="color:${sc}">${st}</div>
+        <div class="ndvi-chart-container"><canvas id="${canvasId}"></canvas></div>
+      </div>`;
+      
+    const ctx = document.getElementById(canvasId).getContext('2d');
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: dates.map(d => new Date(d).toLocaleDateString('uk-UA', { day: 'numeric', month: 'short' })),
+        datasets: [{
+          label: 'NDVI',
+          data: ndviValues,
+          borderColor: '#4caf50',
+          backgroundColor: 'rgba(76,175,80,0.1)',
+          tension: 0.2,
+          pointRadius: 0,
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          y: { min: 0, max: 1, ticks: { color: '#81c784' } },
+          x: { ticks: { color: '#4d8c51', maxTicksLimit: 5 } }
+        }
+      }
+    });
+  } catch (e) { container.innerHTML = '<div class="rain-loading">⚠️ Помилка</div>'; }
+}
+
+async function fetchAgroPopup(lat, lng, field, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  const crop = CROPS[field.crop] || CROPS[''];
+  const soil = SOILS[field.soilType] || SOILS[''];
+  const gdd = field.sowingDate ? calcGDD(field.sowingDate, crop.gddBase) : 0;
+  const gs = getGrowthStage(field.crop, gdd);
+  let html = '<div class="agro-block"><b>🌱 Агро-аналіз</b>';
+  if (field.sowingDate && field.crop !== 'fallow') {
+    html += '<div class="agro-block-row"><span>GDD (база '+crop.gddBase+'°C)</span><span>'+gdd+'</span></div>';
+    html += '<div class="agro-block-row"><span>Фаза росту</span><span>'+gs.stage+'</span></div>';
+    html += '<div class="growth-bar"><div class="growth-bar-fill" style="width:'+gs.pct+'%"></div></div>';
+    html += '<div style="font-size:10px;color:#4d8c51;text-align:right">'+gs.pct+'% до збору (орієнт.)</div>';
+  }
+  if (field.soilType) html += '<div class="agro-block-row"><span>Ґрунт</span><span>'+soil.name+'</span></div>';
+  html += '<div id="agroDyn_'+field.id+'"></div></div>';
+  container.innerHTML = html;
+  try {
+    const url = 'https://api.open-meteo.com/v1/forecast?latitude='+lat+'&longitude='+lng+'&current=temperature_2m,windspeed_10m,relative_humidity_2m,precipitation&daily=precipitation_sum,et0_fao_evapotranspiration&timezone=auto&forecast_days=7';
+    const r = await fetch(url);
+    const d = await r.json();
+    const prec7 = (d.daily.precipitation_sum || []).reduce((s,v)=>s+(v||0),0);
+    const et7 = (d.daily.et0_fao_evapotranspiration || []).reduce((s,v)=>s+(v||0),0);
+    const balance = ((prec7 - et7) * (soil.waterCap)).toFixed(1);
+    const spray = getSprayWindow(d.current.windspeed_10m, d.current.relative_humidity_2m, d.current.precipitation||0, d.current.temperature_2m);
+    const dyn = document.getElementById('agroDyn_'+field.id);
+    if (dyn) {
+      dyn.innerHTML = '<div class="agro-block-row"><span>Водний баланс 7д</span><span>'+balance+' мм</span></div><span class="'+spray.cls+' spray-badge">'+spray.text+'</span>';
+      field._health = estimateFieldHealth(0.5, parseFloat(balance) > -10 ? 0.7 : 0.3);
+    }
+  } catch(e) {}
+}
+
+async function fetchWeatherPopup(lat,lng,cid) {
+  const c=document.getElementById(cid);if(!c)return;
+  c.innerHTML='<div class="popup-weather-loading">⏳ Погода...</div>';
+  try {
+    const url='https://api.open-meteo.com/v1/forecast?latitude='+lat+'&longitude='+lng+'&current=temperature_2m,weathercode,windspeed_10m,relative_humidity_2m&timezone=auto';
+    const r=await fetch(url);if(!r.ok)throw new Error();
+    const d=await r.json(),cur=d.current;
+    const em=wxEmoji(cur.weathercode),desc=wxDesc(cur.weathercode);
+    c.innerHTML='<div class="popup-weather"><div class="popup-weather-row"><span style="font-size:18px">'+em+'</span><span style="font-size:16px;font-weight:700;color:#a5d6a7;">'+Math.round(cur.temperature_2m)+'°C</span><span style="font-size:11px;color:#81c784;">'+desc+'</span></div><div style="font-size:10px;color:#4d8c51;margin-top:3px;">💨 '+Math.round(cur.windspeed_10m)+' км/г · 💧 '+cur.relative_humidity_2m+'%</div></div>';
+  } catch(e){c.innerHTML='';}
+}
+
+function bindFieldPopup(polygon,field) {
+  const c=CROPS[field.crop]||CROPS[''];
+  const soil=SOILS[field.soilType]||SOILS[''];
+  const sow=field.sowingDate||'—',fert=field.fertilizationDate||'—',harv=field.harvestDate||'—';
+  const rainId='rain_'+field.id,ndviId='ndvi_'+field.id,ndviCanvasId='ndviChart_'+field.id,wxId='wx_'+field.id,agroId='agro_'+field.id,opsId='ops_'+field.id,notesId='notes_'+field.id;
+  const div=document.createElement('div');
+  div.innerHTML='<div style="min-width:260px"><b style="font-size:14px;">'+c.emoji+' '+escapeHtml(field.name)+'</b><br>🌱 '+c.name+(field.soilType?' · '+soil.name:'')+'<br>📐 Площа: <b>'+field.area+' га</b><br>🗓 Посів: '+escapeHtml(sow)+'<br>🧪 Добрива: '+escapeHtml(fert)+'<br>'+(harv!=='—'?'🚜 Збір: '+escapeHtml(harv)+'<br>':'')+'🕒 Створено: '+(field.date||'—')+'<br><div id="'+wxId+'" style="margin-top:4px;"></div><div id="'+agroId+'"></div><div id="'+ndviId+'"></div><div id="'+rainId+'"></div><div style="margin-top:8px;"><b style="font-size:12px;">📋 Журнал операцій</b><div class="ops-list" id="'+opsId+'"></div><div class="ops-form"><select id="opType_'+field.id+'"><option value="spray">💨 Обприскування</option><option value="fert">🧪 Добрива</option><option value="sow">🌱 Посів</option><option value="harvest">🚜 Збір</option><option value="inspect">🔍 Огляд</option><option value="other">📝 Інше</option></select><input type="date" id="opDate_'+field.id+'" /><input type="text" id="opProduct_'+field.id+'" placeholder="Препарат/норма" style="min-width:100px" /><button class="ops-add-btn" onclick="addOperation(\''+field.id+'\')">+ Додати</button></div></div><div style="margin-top:6px;"><textarea class="notes-area" id="'+notesId+'" placeholder="📝 Замітки (обприскування, техніка...)">'+(field.notes||'')+'</textarea><button class="notes-save-btn" onclick="saveNotes(\''+field.id+'\')">💾 Зберегти</button></div><button class="popup-btn popup-btn-edit" id="editBtn_'+field.id+'">✏️ Редагувати</button><button class="popup-btn popup-btn-delete" id="deleteBtn_'+field.id+'">🗑 Видалити</button></div>';
+  polygon.bindPopup(div,{maxWidth:380});
+  polygon.on('popupopen',()=>{
+    const ct=polyCenter(field.pts);
+    document.getElementById('opDate_'+field.id).value = new Date().toISOString().split('T')[0];
+    renderOpsList(field);
+    fetchWeatherPopup(ct[0],ct[1],wxId);
+    fetchAgroPopup(ct[0],ct[1],field,agroId);
+    fetchNDVI(ct[0],ct[1],ndviId,ndviCanvasId);
+    fetchRainHistory(ct[0],ct[1],rainId);
+    setTimeout(()=>{
+      const eb=document.getElementById('editBtn_'+field.id);
+      const db=document.getElementById('deleteBtn_'+field.id);
+      if(eb){const n=eb.cloneNode(true);eb.parentNode.replaceChild(n,eb);n.addEventListener('click',e=>{e.stopPropagation();startEditField(field);});}
+      if(db){const n=db.cloneNode(true);db.parentNode.replaceChild(n,db);n.addEventListener('click',e=>{e.stopPropagation();map.closePopup();confirmDelete(field.id,field.name);});}
+    },20);
+  });
+}
+
+window.saveNotes = function(fieldId) {
+  const field = savedFields.find(f => f.id == fieldId);
+  if (!field) return;
+  const textarea = document.getElementById('notes_'+fieldId);
+  field.notes = textarea.value;
+  localStorage.setItem('agromap_fields', JSON.stringify(savedFields));
+  showToast('📝 Нотатки збережено');
+};
+
+function renderOpsList(field) {
+  const el = document.getElementById('ops_'+field.id);
+  if (!el) return;
+  if (!field.operations?.length) { el.innerHTML = '<div style="font-size:10px;color:#4d8c51;padding:4px">Немає записів</div>'; return; }
+  el.innerHTML = field.operations.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(op => {
+    const t = OP_TYPES[op.type] || OP_TYPES.other;
+    return '<div class="ops-item">'+t.emoji+' '+op.date+' — '+escapeHtml(op.product||t.name)+(op.notes?' ('+escapeHtml(op.notes)+')':'')+'</div>';
+  }).join('');
+}
+
+window.addOperation = function(fieldId) {
+  const field = savedFields.find(f => f.id == fieldId);
+  if (!field) return;
+  const type = document.getElementById('opType_'+fieldId)?.value || 'other';
+  const date = document.getElementById('opDate_'+fieldId)?.value;
+  const product = document.getElementById('opProduct_'+fieldId)?.value?.trim();
+  if (!date) return showToast('⚠️ Вкажіть дату', true);
+  if (!field.operations) field.operations = [];
+  field.operations.push({ id: Date.now(), type, date, product: product || OP_TYPES[type].name, notes: '' });
+  localStorage.setItem('agromap_fields', JSON.stringify(savedFields));
+  renderOpsList(field);
+  document.getElementById('opProduct_'+fieldId).value = '';
+  showToast('✅ Операцію додано');
+  if (document.getElementById('calendarPanel').classList.contains('show')) renderCalendar();
+};
+
+function toggleGpsTrack() {
+  const btn = document.getElementById('btn-gps');
+  const ind = document.getElementById('gpsIndicator');
+  if (gpsTracking) {
+    if (gpsWatchId !== null) navigator.geolocation.clearWatch(gpsWatchId);
+    gpsWatchId = null; gpsTracking = false;
+    btn.classList.remove('active'); ind.classList.remove('show');
+    if (pts.length >= 3) { updateAreaDisplay(); checkSaveBtn(); showToast('📍 GPS зупинено. '+pts.length+' точок'); }
+    else showToast('📍 GPS зупинено');
     return;
   }
-  const fieldToDelete = savedFields[fieldIndex];
-  
-  // Видаляємо групу з полігоном
-  const group = fieldGroups.get(fieldId);
-  if (group) {
-    group.clearLayers();
-    map.removeLayer(group);
-    fieldGroups.delete(fieldId);
-  }
-  
-  // Видаляємо маркер (іконку) з контейнера
-  const marker = fieldMarkers.get(fieldId);
-  if (marker) {
-    iconsContainer.removeLayer(marker);
-    fieldMarkers.delete(fieldId);
-  }
-  
-  // Видаляємо з масиву та localStorage
-  savedFields.splice(fieldIndex, 1);
-  try {
-    localStorage.setItem('agromap_fields', JSON.stringify(savedFields));
-    showToast(`✅ Поле "${fieldToDelete.name}" повністю видалено`);
-    if (tg && tg.sendData) {
-      tg.sendData(JSON.stringify({ action: "delete", id: fieldId, name: fieldToDelete.name }));
+  if (!navigator.geolocation) return showToast('GPS недоступний', true);
+  if (mode !== 'draw') setMode('draw');
+  if (editingFieldId) cancelEdit();
+  gpsTracking = true; btn.classList.add('active'); ind.classList.add('show');
+  showToast('📍 Йдіть по межі поля. Натисніть GPS знову для зупинки');
+  gpsWatchId = navigator.geolocation.watchPosition(pos => {
+    const lat = pos.coords.latitude, lng = pos.coords.longitude;
+    if (pts.length && pts[pts.length-1][0] === lat && pts[pts.length-1][1] === lng) return;
+    const last = pts[pts.length-1];
+    if (last) {
+      const d = Math.sqrt(Math.pow(lat-last[0],2)+Math.pow(lng-last[1],2));
+      if (d < 0.00003) return;
     }
-  } catch(e) {
-    showToast("❌ Помилка збереження", true);
+    pts.push([lat, lng]);
+    const m = L.circleMarker([lat,lng],{radius:5,color:'#1565c0',fillColor:'#42a5f5',fillOpacity:1,weight:2}).addTo(map);
+    tempMarkers.push(m);
+    if (currentPoly) map.removeLayer(currentPoly);
+    if (pts.length >= 2) currentPoly = L.polygon(pts,{color:'#4caf50',fillColor:'#81c784',fillOpacity:0.3,weight:3,dashArray:'5,5'}).addTo(map);
+    updateAreaDisplay(); checkSaveBtn();
+    map.panTo([lat, lng], { animate: true, duration: 0.3 });
+  }, () => showToast('⚠️ Помилка GPS', true), { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 });
+}
+
+function parseGeoJsonPolygons(obj) {
+  const polys = [];
+  function ringToPts(ring) { return ring.map(([lon,lat]) => [lat, lon]); }
+  function extract(g) {
+    if (!g) return;
+    if (g.type === 'Polygon') polys.push({ pts: ringToPts(g.coordinates[0]), name: '' });
+    else if (g.type === 'MultiPolygon') g.coordinates.forEach(p => polys.push({ pts: ringToPts(p[0]), name: '' }));
   }
-  
-  map.closePopup();
-  updateIconsVisibility();
+  if (obj.type === 'FeatureCollection') obj.features.forEach(f => {
+    const p = { pts: [], name: f.properties?.name || f.properties?.Name || '' };
+    if (f.geometry?.type === 'Polygon') p.pts = ringToPts(f.geometry.coordinates[0]);
+    else if (f.geometry?.type === 'MultiPolygon') p.pts = ringToPts(f.geometry.coordinates[0][0]);
+    if (p.pts.length >= 3) polys.push(p);
+  });
+  else if (obj.type === 'Feature') {
+    const p = { pts: [], name: obj.properties?.name || '' };
+    if (obj.geometry?.type === 'Polygon') p.pts = ringToPts(obj.geometry.coordinates[0]);
+    if (p.pts.length >= 3) polys.push(p);
+  } else extract(obj);
+  return polys.filter(p => p.pts.length >= 3);
 }
 
-// Прив'язка попапу з кнопкою видалення до полігону
-function bindDeletePopup(polygon, field) {
-  const c = CROPS[field.crop] || CROPS[''];
-  const popupContent = document.createElement('div');
-  popupContent.innerHTML = `
-    <div style="min-width: 180px;">
-      <b>${c.emoji} ${escapeHtml(field.name)}</b><br>
-      🌱 ${c.name}<br>
-      📐 Площа: <b>${field.area} га</b><br>
-      🕒 ${field.date || '—'}<br>
-      <button class="popup-btn-delete" id="deleteBtn_${field.id}">
-        🗑 Видалити поле
-      </button>
-    </div>
-  `;
-  
-  polygon.bindPopup(popupContent);
-  
-  polygon.on('popupopen', () => {
-    setTimeout(() => {
-      const btn = document.getElementById(`deleteBtn_${field.id}`);
-      if (btn) {
-        const newBtn = btn.cloneNode(true);
-        btn.parentNode.replaceChild(newBtn, btn);
-        newBtn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          map.closePopup();
-          deleteFieldById(field.id);
-        });
-      }
-    }, 10);
+function parseKmlPolygons(text) {
+  const doc = new DOMParser().parseFromString(text, 'text/xml');
+  const polys = [];
+  doc.querySelectorAll('Placemark').forEach(pm => {
+    const name = pm.querySelector('name')?.textContent?.trim() || '';
+    const coords = pm.querySelector('coordinates');
+    if (!coords) return;
+    const pts = coords.textContent.trim().split(/\s+/).map(s => {
+      const p = s.split(',');
+      return [parseFloat(p[1]), parseFloat(p[0])];
+    }).filter(p => !isNaN(p[0]) && !isNaN(p[1]));
+    if (pts.length >= 3) polys.push({ pts, name });
   });
+  if (!polys.length) {
+    doc.querySelectorAll('coordinates').forEach((el, i) => {
+      const pts = el.textContent.trim().split(/\s+/).map(s => {
+        const p = s.split(',');
+        return [parseFloat(p[1]), parseFloat(p[0])];
+      }).filter(p => !isNaN(p[0]));
+      if (pts.length >= 3) polys.push({ pts, name: 'Поле '+(i+1) });
+    });
+  }
+  return polys;
 }
 
-// ---------- ВІДОБРАЖЕННЯ ЗБЕРЕЖЕНОГО ПОЛЯ ----------
-function drawSavedField(field) {
-  const c = CROPS[field.crop] || CROPS[''];
-  
-  // Створюємо групу для полігону
-  const group = L.featureGroup().addTo(map);
-  fieldGroups.set(field.id, group);
-  
-  // Створюємо полігон
-  const poly = L.polygon(field.pts, {
-    color: c.color,
-    fillColor: c.fill,
-    fillOpacity: 0.42,
-    weight: 2.8,
-    opacity: 0.9,
-    interactive: true,
-  });
-  
-  // Додаємо попап з кнопкою видалення
-  bindDeletePopup(poly, field);
-  
-  // Додаємо полігон до групи
-  poly.addTo(group);
-  
-  // Створюємо маркер (іконку) в центрі поля
-  const center = polyCenter(field.pts);
-  const marker = L.marker(center, {
-    icon: makeCropIcon(field.crop),
-    interactive: false,
-    zIndexOffset: 100,
-  });
-  
-  // Додаємо маркер в окремий контейнер
-  marker.addTo(iconsContainer);
-  fieldMarkers.set(field.id, marker);
-  
-  updateIconsVisibility();
+function addFieldFromPolygon(polyData, index) {
+  const defaultName = polyData.name || ('Поле '+(savedFields.length+index+1));
+  const name = prompt('Назва поля:', defaultName);
+  if (!name) return null;
+  const crop = prompt('Культура (wheat/corn/sunflower/rapeseed/soy/barley або Enter):', '') || '';
+  const nf = {
+    id: Date.now()+Math.floor(Math.random()*10000)+index,
+    name, crop: CROPS[crop] ? crop : '',
+    pts: polyData.pts, area: calcArea(polyData.pts),
+    date: new Date().toLocaleDateString('uk-UA'),
+    sowingDate:'', fertilizationDate:'', harvestDate:'', soilType:'', notes:'', operations:[]
+  };
+  return nf;
 }
 
-// ---------- ЗАВАНТАЖЕННЯ ПОЛІВ ----------
-function loadSavedFields() {
-  // Очищаємо всі шари
-  fieldGroups.forEach((group, id) => {
-    group.clearLayers();
-    map.removeLayer(group);
-  });
-  fieldGroups.clear();
-  
-  fieldMarkers.forEach((marker, id) => {
-    iconsContainer.removeLayer(marker);
-  });
-  fieldMarkers.clear();
-  iconsContainer.clearLayers();
-  
-  try {
-    const raw = localStorage.getItem('agromap_fields');
-    if (raw) {
-      savedFields = JSON.parse(raw);
-      // Переконуємось, що кожне поле має ID
-      let changed = false;
-      savedFields.forEach(f => {
-        if (!f.id) {
-          f.id = Date.now() + Math.random() * 10000;
-          changed = true;
+function importGeoKml() {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = '.json,.geojson,.kml';
+  input.onchange = e => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        let polys = [];
+        const text = ev.target.result;
+        if (file.name.endsWith('.kml')) polys = parseKmlPolygons(text);
+        else {
+          const obj = JSON.parse(text);
+          if (Array.isArray(obj) && obj[0]?.pts) {
+            return showToast('Це JSON полів — використайте «📥 JSON»', true);
+          }
+          polys = parseGeoJsonPolygons(obj);
         }
-      });
-      if (changed) {
-        localStorage.setItem('agromap_fields', JSON.stringify(savedFields));
-      }
-      savedFields.forEach(f => drawSavedField(f));
-    } else {
-      savedFields = [];
-    }
-  } catch(e) {
-    console.warn(e);
-    savedFields = [];
-  }
+        if (polys.length) {
+          const added = [];
+          polys.forEach((p, i) => { const f = addFieldFromPolygon(p, i); if (f) added.push(f); });
+          if (!added.length) return;
+          savedFields.push(...added);
+          localStorage.setItem('agromap_fields', JSON.stringify(savedFields));
+          added.forEach(f => drawSavedField(f));
+          refreshFieldList(); updateHeaderStats();
+          zoomToAll();
+          showToast('📂 Імпортовано '+added.length+' полів');
+        }
+      } catch(ex) { showToast('❌ Помилка файлу: '+ex.message, true); }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
+function exportGeoJSON() {
+  if (!savedFields.length) return showToast('Немає полів', true);
+  const fc = {
+    type: 'FeatureCollection',
+    features: savedFields.map(f => ({
+      type: 'Feature',
+      properties: { name: f.name, crop: f.crop, area: f.area, sowingDate: f.sowingDate, soilType: f.soilType },
+      geometry: { type: 'Polygon', coordinates: [f.pts.map(([lat,lng]) => [lng, lat])] }
+    }))
+  };
+  const blob = new Blob([JSON.stringify(fc, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob), a = document.createElement('a');
+  a.href = url; a.download = 'agromap_fields.geojson'; a.click(); URL.revokeObjectURL(url);
+  showToast('🗺 GeoJSON експортовано');
+}
+
+function confirmDelete(id,name) {
+  pendingDeleteId=id;
+  document.getElementById('confirmText').innerHTML='Видалити поле <b>"'+escapeHtml(name)+'"</b>?<br><small style="color:#5a8a5a;">Цю дію неможливо скасувати.</small>';
+  document.getElementById('confirmOverlay').classList.add('show');
+  document.getElementById('confirmDeleteBtn').onclick=()=>{closeConfirm();deleteFieldById(id);};
+}
+function closeConfirm(){document.getElementById('confirmOverlay').classList.remove('show');pendingDeleteId=null;}
+function deleteFieldById(id) {
+  const idx=savedFields.findIndex(f=>f.id===id);if(idx===-1){showToast('Поле не знайдено',true);return;}
+  const field=savedFields[idx];
+  if(editingFieldId===id)cancelEdit();
+  const gr=fieldGroups.get(id);if(gr){gr.clearLayers();map.removeLayer(gr);fieldGroups.delete(id);}
+  const mk=fieldMarkers.get(id);if(mk){iconsContainer.removeLayer(mk);fieldMarkers.delete(id);}
+  savedFields.splice(idx,1);
+  localStorage.setItem('agromap_fields',JSON.stringify(savedFields));
+  showToast('✅ Поле "'+field.name+'" видалено');
+  if(tg?.sendData)tg.sendData(JSON.stringify({action:'delete',id,name:field.name}));
+  map.closePopup();refreshFieldList();updateHeaderStats();updateIconsVisibility();
+}
+
+function startEditField(field) {
+  editingFieldId=field.id;
+  document.getElementById('fieldName').value=field.name;
+  document.getElementById('cropType').value=field.crop;
+  document.getElementById('sowingDate').value=field.sowingDate||'';
+  document.getElementById('fertilizationDate').value=field.fertilizationDate||'';
+  document.getElementById('harvestDate').value=field.harvestDate||'';
+  document.getElementById('soilType').value=field.soilType||'';
+  document.getElementById('saveBtn').textContent='✏️ Оновити поле';
+  document.getElementById('cancelEditBtn').classList.add('visible');
+  document.getElementById('hintText').textContent='✏️ Змініть дані та натисніть "Оновити"';
+  if(mode!=='view')setMode('view');
+  map.closePopup();
+}
+function cancelEdit() {
+  editingFieldId=null;
+  ['fieldName','sowingDate','fertilizationDate','harvestDate'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('cropType').value='';
+  document.getElementById('soilType').value='';
+  document.getElementById('saveBtn').textContent='💾 Зберегти поле';
+  document.getElementById('cancelEditBtn').classList.remove('visible');
+  document.getElementById('hintText').textContent='Натисніть на карту, щоб почати малювати поле';
+  document.getElementById('saveBtn').disabled=true;
+}
+
+function drawSavedField(field) {
+  const c=CROPS[field.crop]||CROPS[''];
+  const group=L.featureGroup().addTo(map);fieldGroups.set(field.id,group);
+  const poly=L.polygon(field.pts,{color:c.color,fillColor:c.fill,fillOpacity:0.42,weight:2.8,opacity:0.9,interactive:true});
+  bindFieldPopup(poly,field);poly.addTo(group);
+  const ct=polyCenter(field.pts);
+  const marker=L.marker(ct,{icon:makeCropIcon(field.crop),interactive:false,zIndexOffset:100});
+  marker.addTo(iconsContainer);fieldMarkers.set(field.id,marker);
   updateIconsVisibility();
 }
-
-// ---------- ЛОГІКА МАЛЮВАННЯ ----------
-function updateAreaDisplay() {
-  document.getElementById('areaDisplay').innerHTML = `Площа: <span>${calcArea(pts)}</span> га`;
+function redrawField(field) {
+  const gr=fieldGroups.get(field.id);if(gr){gr.clearLayers();map.removeLayer(gr);fieldGroups.delete(field.id);}
+  const mk=fieldMarkers.get(field.id);if(mk){iconsContainer.removeLayer(mk);fieldMarkers.delete(field.id);}
+  drawSavedField(field);
 }
 
-function updateHint() {
-  const hintMessages = [
-    'Натисніть на карту щоб почати малювати поле',
-    'Додайте ще одну точку...',
-    'Ще одна точка — і поле замкнеться',
-    `${pts.length} точок. Продовжуйте або збережіть`,
-  ];
-  const idx = Math.min(pts.length, hintMessages.length - 1);
-  document.getElementById('hintText').textContent = hintMessages[idx];
+function loadSavedFields() {
+  fieldGroups.forEach(g=>{g.clearLayers();map.removeLayer(g);});fieldGroups.clear();
+  fieldMarkers.forEach(m=>iconsContainer.removeLayer(m));fieldMarkers.clear();iconsContainer.clearLayers();
+  try {
+    const raw=localStorage.getItem('agromap_fields');
+    if(raw){
+      savedFields=JSON.parse(raw);
+      savedFields.forEach(f=>{
+        if(!f.id)f.id=Date.now()+Math.random()*10000;
+        if(f.sowingDate===undefined)f.sowingDate='';
+        if(f.fertilizationDate===undefined)f.fertilizationDate='';
+        if(f.harvestDate===undefined)f.harvestDate='';
+        if(f.notes===undefined)f.notes='';
+        if(f.soilType===undefined)f.soilType='';
+        if(!f.operations)f.operations=[];
+        if(!f.date)f.date=new Date().toLocaleDateString('uk-UA');
+        if(!f.area)f.area=calcArea(f.pts);
+      });
+      localStorage.setItem('agromap_fields',JSON.stringify(savedFields));
+      savedFields.forEach(f=>drawSavedField(f));
+    } else savedFields=[];
+  } catch(e){savedFields=[];}
+  refreshFieldList();updateHeaderStats();updateIconsVisibility();
 }
 
-function checkSaveBtn() {
-  const nameValid = document.getElementById('fieldName').value.trim().length > 0;
-  const enoughPoints = pts.length >= 3;
-  document.getElementById('saveBtn').disabled = !(nameValid && enoughPoints);
+function refreshFieldList() {
+  const container=document.getElementById('fieldList');
+  const q=(document.getElementById('searchInput')?.value||'').toLowerCase();
+  const filtered=q?savedFields.filter(f=>f.name.toLowerCase().includes(q)):savedFields;
+  document.getElementById('fieldCount').textContent='('+savedFields.length+')';
+  if(filtered.length===0){container.innerHTML='<div class="empty-list">'+(q?'🔍 Нічого не знайдено':'🌾 Немає полів')+'</div>';return;}
+  container.innerHTML=filtered.map(f=>{
+    const c=CROPS[f.crop]||CROPS[''];
+    const sow=f.sowingDate?'🗓 '+f.sowingDate:'';
+    let healthHtml = '';
+    if (f.sowingDate && f.crop && f.crop !== 'fallow') {
+      const gdd = calcGDD(f.sowingDate, c.gddBase);
+      const gs = getGrowthStage(f.crop, gdd);
+      const cls = gs.pct >= 60 ? 'good' : gs.pct >= 30 ? 'mid' : 'low';
+      healthHtml = '<div class="fi-health '+cls+'">'+gs.stage+' · GDD '+gdd+'</div>';
+    }
+    return '<div class="field-item" onclick="focusField(\''+f.id+'\')"><div class="fi-name">'+c.emoji+' '+escapeHtml(f.name)+'</div><div class="fi-info">'+c.name+(sow?' · '+sow:'')+'</div><div class="fi-area">📐 '+f.area+' га</div>'+healthHtml+'</div>';
+  }).join('');
+  updateHeaderStats();
+  if (document.getElementById('calendarPanel').classList.contains('show')) renderCalendar();
+  if (document.getElementById('dashboardPanel').classList.contains('show')) renderDashboard();
 }
 
-function clearCurrent() {
-  pts = [];
-  tempMarkers.forEach(m => map.removeLayer(m));
-  tempMarkers = [];
-  if (currentPoly) { map.removeLayer(currentPoly); currentPoly = null; }
-  document.getElementById('areaDisplay').innerHTML = 'Площа: <span>—</span> га';
-  checkSaveBtn();
-  updateHint();
-  showToast('🔄 Малюнок очищено');
+function focusField(id) {
+  const field=savedFields.find(f=>f.id==id);if(!field)return;
+  const ct=polyCenter(field.pts);
+  map.setView(ct,Math.max(map.getZoom(),16),{animate:true});
+  const gr=fieldGroups.get(field.id);
+  if(gr)gr.eachLayer(l=>{if(l instanceof L.Polygon)l.openPopup(ct);});
+  if(window.innerWidth<=600)toggleSidePanel(false);
 }
 
-function setMode(m) {
-  mode = m;
-  document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
-  document.getElementById(`btn-${m}`).classList.add('active');
-  const hintDiv = document.getElementById('hintText');
-  if (mode === 'view') {
-    hintDiv.textContent = '📌 Натисніть на будь-яке поле → з’явиться інформація та кнопка "Видалити"';
+function zoomToAll() {
+  if(!savedFields.length){showToast('Немає полів',true);return;}
+  const pts2=savedFields.flatMap(f=>f.pts);
+  map.fitBounds(L.latLngBounds(pts2),{padding:[30,30]});
+  showToast('🔍 Усі поля на екрані');
+}
+
+function toggleSidePanel(force) {
+  const panel=document.getElementById('sidePanel'),btn=document.getElementById('btn-toggle-list');
+  if(typeof force==='boolean'){
+    if(force){panel.classList.remove('collapsed');btn.classList.add('active');}
+    else{panel.classList.add('collapsed');btn.classList.remove('active');}
   } else {
-    hintDiv.textContent = '✏️ Клікайте на карту, додавайте точки для нового поля';
+    panel.classList.toggle('collapsed');
+    btn.classList.toggle('active',!panel.classList.contains('collapsed'));
   }
-  if (mode === 'view') {
+  if(!panel.classList.contains('collapsed')){refreshFieldList();document.getElementById('searchInput').value='';}
+  setTimeout(()=>map.invalidateSize(),300);
+}
+
+function exportFields() {
+  if(!savedFields.length)return showToast('Немає полів для експорту',true);
+  const blob=new Blob([JSON.stringify(savedFields,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='agromap_fields.json';a.click();URL.revokeObjectURL(url);
+  showToast('📤 Експортовано');
+}
+function importFields() {
+  const input=document.createElement('input');input.type='file';input.accept='.json';
+  input.onchange=e=>{
+    const file=e.target.files[0];if(!file)return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      try {
+        const data=JSON.parse(ev.target.result);
+        if(!Array.isArray(data))throw new Error('Not array');
+        data.forEach(f=>{if(!f.name||!f.pts||!Array.isArray(f.pts))throw new Error('Bad data');});
+        if(confirm('Замінити всі поля ('+savedFields.length+') на '+data.length+' з файлу?')){
+          fieldGroups.forEach(g=>{g.clearLayers();map.removeLayer(g);});fieldGroups.clear();
+          fieldMarkers.forEach(m=>iconsContainer.removeLayer(m));fieldMarkers.clear();iconsContainer.clearLayers();
+          savedFields=data.map(f=>{
+            if(!f.id)f.id=Date.now()+Math.random()*10000;
+            ['sowingDate','fertilizationDate','harvestDate','notes','soilType'].forEach(k=>{if(!f[k])f[k]='';});
+            if(!f.operations)f.operations=[];
+            if(!f.date)f.date=new Date().toLocaleDateString('uk-UA');
+            if(!f.area)f.area=calcArea(f.pts);
+            return f;
+          });
+          localStorage.setItem('agromap_fields',JSON.stringify(savedFields));
+          savedFields.forEach(f=>drawSavedField(f));
+          refreshFieldList();updateHeaderStats();
+          showToast('📥 Імпортовано '+savedFields.length+' полів');
+        }
+      } catch(ex){showToast('❌ Некоректний файл',true);}
+    };reader.readAsText(file);
+  };input.click();
+}
+
+function updateAreaDisplay(){document.getElementById('areaDisplay').innerHTML='Площа: <span>'+calcArea(pts)+'</span> га';}
+function updateHint(){
+  if(editingFieldId)return;
+  const hints=['Натисніть на карту, щоб почати малювати','Додайте ще одну точку...','Ще одна — і поле замкнеться',pts.length+' точок. Продовжуйте або збережіть'];
+  document.getElementById('hintText').textContent=hints[Math.min(pts.length,hints.length-1)];
+}
+function checkSaveBtn(){
+  const ok=document.getElementById('fieldName').value.trim().length>0;
+  document.getElementById('saveBtn').disabled=editingFieldId?!ok:!(ok&&pts.length>=3);
+  document.getElementById('btn-undo-point').disabled=(pts.length===0);
+  document.getElementById('btn-rectify').disabled=(pts.length<3);
+}
+function clearCurrent(){
+  pts=[];tempMarkers.forEach(m=>map.removeLayer(m));tempMarkers=[];
+  if(currentPoly){map.removeLayer(currentPoly);currentPoly=null;}
+  document.getElementById('areaDisplay').innerHTML='Площа: <span>—</span> га';
+  checkSaveBtn();updateHint();showToast('🔄 Малюнок очищено');
+}
+function undoLastPoint(){
+  if(pts.length===0)return;pts.pop();
+  const lm=tempMarkers.pop();if(lm)map.removeLayer(lm);
+  if(currentPoly)map.removeLayer(currentPoly);
+  if(pts.length>=2)currentPoly=L.polygon(pts,{color:'#4caf50',fillColor:'#81c784',fillOpacity:0.3,weight:3,dashArray:'5,5'}).addTo(map);
+  else currentPoly=null;
+  updateAreaDisplay();updateHint();checkSaveBtn();
+  showToast('↩ Останню точку скасовано');
+}
+function setMode(m){
+  mode=m;
+  if (gpsTracking) toggleGpsTrack();
+  document.querySelectorAll('.mode-btn').forEach(b=>b.classList.remove('active'));
+  document.getElementById('btn-'+m)?.classList.add('active');
+  if(m==='view'){
+    document.getElementById('hintText').textContent='📌 Натисніть на поле → GDD, NDVI, агро-рада, опади';
+    if(!editingFieldId)clearCurrent();
+  } else {
+    if(editingFieldId)cancelEdit();
+    document.getElementById('hintText').textContent='✏️ Клікайте на карту, додавайте точки для нового поля';
     clearCurrent();
   }
+  document.getElementById('btn-undo-point').disabled=true;
 }
-
-function saveField() {
-  const name = document.getElementById('fieldName').value.trim();
-  const crop = document.getElementById('cropType').value;
-  if (!name) return showToast('⚠️ Введіть назву поля');
-  if (pts.length < 3) return showToast('⚠️ Намалюйте поле (мін. 3 точки)');
-  
-  const area = calcArea(pts);
-  const now = new Date().toLocaleDateString('uk-UA');
-  const newId = Date.now() + Math.floor(Math.random() * 10000);
-  const newField = { 
-    id: newId,
-    name, 
-    crop, 
-    pts: [...pts], 
-    area, 
-    date: now,
-  };
-  
-  savedFields.push(newField);
-  try {
-    localStorage.setItem('agromap_fields', JSON.stringify(savedFields));
-  } catch(e) { 
-    showToast('Помилка збереження', true); 
-    return; 
-  }
-  
-  drawSavedField(newField);
-  
-  if (tg && tg.sendData) {
-    tg.sendData(JSON.stringify({ action: "create", field: newField }));
+function saveOrUpdateField(){
+  const name=document.getElementById('fieldName').value.trim();
+  const crop=document.getElementById('cropType').value;
+  const sow=document.getElementById('sowingDate').value;
+  const fert=document.getElementById('fertilizationDate').value;
+  const harv=document.getElementById('harvestDate').value;
+  const soil=document.getElementById('soilType').value;
+  if(!name)return showToast('⚠️ Введіть назву поля');
+  if(editingFieldId){
+    const idx=savedFields.findIndex(f=>f.id===editingFieldId);
+    if(idx===-1){showToast('Помилка',true);cancelEdit();return;}
+    const field = savedFields[idx];
+    Object.assign(field,{name,crop,sowingDate:sow,fertilizationDate:fert,harvestDate:harv,soilType:soil});
+    localStorage.setItem('agromap_fields',JSON.stringify(savedFields));
+    redrawField(savedFields[idx]);
+    showToast('✅ Поле "'+name+'" оновлено');
+    if(tg?.sendData)tg.sendData(JSON.stringify({action:'update',field:savedFields[idx]}));
+    cancelEdit();
   } else {
-    showToast(`✅ ${name} (${area} га) збережено`);
+    if(pts.length<3)return showToast('⚠️ Намалюйте поле (мін. 3 точки)');
+    const area=calcArea(pts),now=new Date().toLocaleDateString('uk-UA');
+    const newId=Date.now()+Math.floor(Math.random()*10000);
+    const nf={id:newId,name,crop,pts:[...pts],area,date:now,sowingDate:sow,fertilizationDate:fert,harvestDate:harv,soilType:soil,notes:'',operations:[]};
+    savedFields.push(nf);localStorage.setItem('agromap_fields',JSON.stringify(savedFields));
+    drawSavedField(nf);
+    if(tg?.sendData)tg.sendData(JSON.stringify({action:'create',field:nf}));
+    else showToast('✅ '+name+' ('+area+' га) збережено');
+    clearCurrent();
+    ['fieldName','sowingDate','fertilizationDate','harvestDate'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('cropType').value='';
+    document.getElementById('soilType').value='';
   }
-  
-  clearCurrent();
-  document.getElementById('fieldName').value = '';
-  document.getElementById('cropType').value = '';
-  document.getElementById('saveBtn').disabled = true;
+  refreshFieldList();updateHeaderStats();checkSaveBtn();
 }
 
-// ---------- ПОДІЇ КАРТИ ----------
-map.on('click', (e) => {
-  if (mode !== 'draw') return;
-  
-  pts.push([e.latlng.lat, e.latlng.lng]);
-  
-  const marker = L.circleMarker([e.latlng.lat, e.latlng.lng], {
-    radius: 5, color: '#4caf50', fillColor: '#a5d6a7', fillOpacity: 1, weight: 2
-  }).addTo(map);
-  tempMarkers.push(marker);
-  
-  if (currentPoly) map.removeLayer(currentPoly);
-  if (pts.length >= 2) {
-    currentPoly = L.polygon(pts, {
-      color: '#4caf50', fillColor: '#81c784', fillOpacity: 0.3,
-      weight: 3, dashArray: '5,5'
-    }).addTo(map);
-  }
-  
-  updateAreaDisplay();
-  updateHint();
-  checkSaveBtn();
+map.on('click',(e)=>{
+  if(mode!=='draw')return;
+  if(editingFieldId){showToast('Завершіть редагування',true);return;}
+  const ipc=e.originalEvent?.target?.classList?.contains('leaflet-interactive')||e.originalEvent?.target?.closest?.('.leaflet-interactive');
+  if(ipc)return;
+  pts.push([e.latlng.lat,e.latlng.lng]);
+  const m=L.circleMarker([e.latlng.lat,e.latlng.lng],{radius:5,color:'#4caf50',fillColor:'#a5d6a7',fillOpacity:1,weight:2}).addTo(map);
+  tempMarkers.push(m);
+  if(currentPoly)map.removeLayer(currentPoly);
+  if(pts.length>=2)currentPoly=L.polygon(pts,{color:'#4caf50',fillColor:'#81c784',fillOpacity:0.3,weight:3,dashArray:'5,5'}).addTo(map);
+  updateAreaDisplay();updateHint();checkSaveBtn();
 });
 
-// Геолокація
 map.locate({ setView: true, maxZoom: 15 });
-map.on('locationfound', e => {
-  L.circleMarker(e.latlng, {
-    radius: 8, color: '#1565c0', fillColor: '#42a5f5', fillOpacity: 1, weight: 2
-  }).addTo(map).bindPopup('📍 Ви тут').openPopup();
+map.on('moveend', () => { bringActiveOverlaysToFront(); });
+map.on('locationfound',e=>{L.circleMarker(e.latlng,{radius:8,color:'#1565c0',fillColor:'#42a5f5',fillOpacity:1,weight:2}).addTo(map).bindPopup('📍 Ви тут').openPopup();});
+
+['fieldName','cropType','sowingDate','fertilizationDate','harvestDate'].forEach(id=>{
+  document.getElementById(id).addEventListener(id==='fieldName'?'input':'change',checkSaveBtn);
 });
 
-// Слідкуємо за інпутом назви
-document.getElementById('fieldName').addEventListener('input', checkSaveBtn);
+window.setMode=setMode;window.saveOrUpdateField=saveOrUpdateField;window.clearCurrent=clearCurrent;
+window.cancelEdit=cancelEdit;window.undoLastPoint=undoLastPoint;window.toggleSidePanel=toggleSidePanel;
+window.focusField=focusField;window.closeConfirm=closeConfirm;window.exportFields=exportFields;
+window.importFields=importFields;window.makeRectangle=makeRectangle;window.toggleNdviLayer=toggleNdviLayer;
+window.toggleSoilLayer=toggleSoilLayer;window.toggleSentinel2=toggleSentinel2;window.setBaseLayer=setBaseLayer;
+window.toggleLayerPanel=toggleLayerPanel;window.toggleWeatherWidget=toggleWeatherWidget;window.toggleAgroAdvisor=toggleAgroAdvisor;
+window.toggleDashboard=toggleDashboard;window.toggleCalendar=toggleCalendar;window.toggleGpsTrack=toggleGpsTrack;
+window.importGeoKml=importGeoKml;window.exportGeoJSON=exportGeoJSON;window.addOperation=addOperation;window.zoomToAll=zoomToAll;
 
-// Глобальні функції для HTML кнопок
-window.setMode = setMode;
-window.saveField = saveField;
-window.clearCurrent = clearCurrent;
-
-// Ініціалізація
 loadSavedFields();
 setMode('draw');
 </script>
