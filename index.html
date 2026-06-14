@@ -2,7 +2,7 @@
 <html lang="uk">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
   <title>AgroMap — Мої поля</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
@@ -10,7 +10,7 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: 'Segoe UI', sans-serif;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
       background: #1a2e1a;
       color: #e8f5e9;
       height: 100vh;
@@ -35,6 +35,7 @@
       display: flex;
       gap: 8px;
       flex-shrink: 0;
+      flex-wrap: wrap;
     }
     .mode-btn {
       padding: 5px 12px;
@@ -47,7 +48,7 @@
       transition: all .2s;
     }
     .mode-btn.active, .mode-btn:hover { background: #4caf50; color: #fff; }
-    #map { flex: 1; width: 100%; }
+    #map { flex: 1; width: 100%; background: #1e3a1e; }
     .bottom-panel {
       background: #1b3a1b;
       border-top: 2px solid #4caf50;
@@ -89,10 +90,30 @@
       background: #1b3a1b;
       color: #e8f5e9;
       border: 1px solid #4caf50;
-      border-radius: 8px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.6);
     }
     .leaflet-popup-tip { background: #1b3a1b; }
-    .leaflet-popup-content { font-size: 13px; line-height: 1.6; }
+    .leaflet-popup-content { font-size: 13px; line-height: 1.5; margin: 12px 14px; }
+    .popup-btn-delete {
+      background: #c62828;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 6px 12px;
+      font-size: 12px;
+      font-weight: bold;
+      margin-top: 10px;
+      width: 100%;
+      cursor: pointer;
+      transition: background 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .popup-btn-delete:hover { background: #b71c1c; }
+    .popup-btn-delete:active { transform: scale(0.97); }
     #toast {
       position: fixed;
       bottom: 80px;
@@ -101,17 +122,17 @@
       background: #388e3c;
       color: #fff;
       padding: 8px 18px;
-      border-radius: 20px;
+      border-radius: 28px;
       font-size: 13px;
       opacity: 0;
       transition: all .3s;
       pointer-events: none;
       z-index: 9999;
       white-space: nowrap;
+      font-weight: 500;
+      box-shadow: 0 4px 12px black;
     }
     #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-
-    /* Іконка культури на полі */
     .crop-label {
       background: transparent;
       border: none;
@@ -131,14 +152,19 @@
       transition: opacity .3s;
     }
     .crop-name-tag {
-      background: rgba(0,0,0,0.6);
+      background: rgba(0,0,0,0.65);
       color: #fff;
       font-size: 10px;
       font-weight: 700;
       padding: 2px 6px;
-      border-radius: 10px;
+      border-radius: 14px;
       white-space: nowrap;
       letter-spacing: .3px;
+    }
+    @media (max-width: 500px) {
+      .mode-bar { justify-content: center; }
+      .crop-emoji { font-size: 24px; }
+      .crop-name-tag { font-size: 9px; }
     }
   </style>
 </head>
@@ -148,14 +174,14 @@
   <div class="logo">🌾</div>
   <div>
     <h1>AgroMap</h1>
-    <div class="subtitle">Управління полями</div>
+    <div class="subtitle">Управління полями • видалення</div>
   </div>
 </header>
 
 <div class="mode-bar">
   <button class="mode-btn active" id="btn-draw" onclick="setMode('draw')">✏️ Малювати</button>
   <button class="mode-btn" id="btn-view" onclick="setMode('view')">👁 Переглянути</button>
-  <button class="mode-btn" id="btn-clear" onclick="clearCurrent()">🗑 Очистити</button>
+  <button class="mode-btn" id="btn-clear" onclick="clearCurrent()">🗑 Очистити малюнок</button>
 </div>
 
 <div id="map"></div>
@@ -185,6 +211,7 @@
 const tg = window.Telegram?.WebApp;
 if (tg) tg.expand();
 
+// ---------- 1. Ініціалізація карти ----------
 const map = L.map('map', { zoomControl: true }).setView([47.5746, 34.4396], 14);
 
 const satellite = L.tileLayer(
@@ -205,7 +232,7 @@ L.control.layers({
   '🗺 Карта': osm
 }).addTo(map);
 
-// ── Налаштування культур ──
+// ---------- 2. Дані культур ----------
 const CROPS = {
   wheat:     { emoji: '🌾', name: 'Пшениця',   color: '#f9a825', fill: '#fff176' },
   corn:      { emoji: '🌽', name: 'Кукурудза',  color: '#ff8f00', fill: '#ffe082' },
@@ -217,26 +244,39 @@ const CROPS = {
   '':        { emoji: '📍', name: 'Невідомо',   color: '#4caf50', fill: '#81c784' },
 };
 
-// Поріг зуму — вище якого іконки зникають
 const ICON_HIDE_ZOOM = 15;
 
+// Глобальні змінні
 let pts = [];
 let currentPoly = null;
-let savedFields = [];
+let savedFields = [];      // зберігаємо об'єкти полів {id, name, crop, pts, area, date}
 let mode = 'draw';
 let tempMarkers = [];
 
-// Кожен об'єкт savedFields тепер має: { field, poly, marker }
-let fieldLayers = [];
+// Масив для відстеження всіх шарів полів (полігони + маркери іконок)
+let fieldLayers = [];      // { id, poly, marker }
 
-// ── Центр полігону ──
-function polyCenter(pts) {
-  const lat = pts.reduce((s, p) => s + p[0], 0) / pts.length;
-  const lng = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+// Група для іконок культур (керування видимістю)
+const iconLayer = L.layerGroup().addTo(map);
+
+// ---------- Допоміжні функції ----------
+function showToast(msg, isError = false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = isError ? '#c62828' : '#388e3c';
+  t.classList.add('show');
+  setTimeout(() => {
+    t.classList.remove('show');
+    t.style.background = '#388e3c';
+  }, 2600);
+}
+
+function polyCenter(ptsArr) {
+  const lat = ptsArr.reduce((s, p) => s + p[0], 0) / ptsArr.length;
+  const lng = ptsArr.reduce((s, p) => s + p[1], 0) / ptsArr.length;
   return [lat, lng];
 }
 
-// ── Іконка культури ──
 function makeCropIcon(crop) {
   const c = CROPS[crop] || CROPS[''];
   return L.divIcon({
@@ -250,9 +290,7 @@ function makeCropIcon(crop) {
   });
 }
 
-// ── Шар іконок — весь шар додається/видаляється по зуму ──
-const iconLayer = L.layerGroup().addTo(map);
-
+// Оновлення видимості іконок в залежності від зума
 function updateIconVisibility() {
   const z = map.getZoom();
   if (z >= ICON_HIDE_ZOOM) {
@@ -263,92 +301,181 @@ function updateIconVisibility() {
 }
 map.on('zoom', updateIconVisibility);
 
-// ── Намалювати збережене поле ──
+// Обчислення площі в гектарах
+function calcArea(ptsArr) {
+  if (ptsArr.length < 3) return 0;
+  const R = 6371000;
+  let area = 0;
+  const n = ptsArr.length;
+  for (let i = 0; i < n; i++) {
+    const [lat1, lon1] = ptsArr[i];
+    const [lat2, lon2] = ptsArr[(i+1) % n];
+    const φ1 = lat1 * Math.PI/180, φ2 = lat2 * Math.PI/180;
+    const λ2 = lon2 * Math.PI/180, λ1 = lon1 * Math.PI/180;
+    area += (λ2 - λ1) * (2 + Math.sin(φ1) + Math.sin(φ2));
+  }
+  return ((Math.abs(area) * R * R / 2) / 10000).toFixed(2);
+}
+
+// ---------- ВИДАЛЕННЯ ПОЛЯ (ключова функція) ----------
+function deleteFieldById(fieldId) {
+  // 1. Знайти поле в масиві savedFields
+  const fieldIndex = savedFields.findIndex(f => f.id === fieldId);
+  if (fieldIndex === -1) {
+    showToast("⚠️ Поле не знайдено", true);
+    return;
+  }
+  const fieldToDelete = savedFields[fieldIndex];
+  
+  // 2. Видалити візуальні шари (полігон і маркер)
+  const layerObj = fieldLayers.find(l => l.id === fieldId);
+  if (layerObj) {
+    if (layerObj.poly) map.removeLayer(layerObj.poly);
+    if (layerObj.marker) map.removeLayer(layerObj.marker);
+    // Видалити з масиву шарів
+    const layerIndex = fieldLayers.findIndex(l => l.id === fieldId);
+    if (layerIndex !== -1) fieldLayers.splice(layerIndex, 1);
+  }
+  
+  // 3. Видалити з даних localStorage та зберегти
+  savedFields.splice(fieldIndex, 1);
+  try {
+    localStorage.setItem('agromap_fields', JSON.stringify(savedFields));
+    showToast(`✅ Поле "${fieldToDelete.name}" видалено`);
+    // Якщо хочемо надіслати подію про видалення в Telegram WebApp (опціонально)
+    if (tg && tg.sendData) {
+      tg.sendData(JSON.stringify({ action: "delete", id: fieldId, name: fieldToDelete.name }));
+    }
+  } catch(e) {
+    showToast("❌ Помилка збереження після видалення", true);
+  }
+  
+  // 4. Якщо відкритий попап, який належить видаленому полю – закриємо (автоматично)
+  map.closePopup();
+}
+
+// Функція оновлення попапу з кнопкою видалення
+function bindPopupWithDelete(polygon, field) {
+  const c = CROPS[field.crop] || CROPS[''];
+  const popupContent = document.createElement('div');
+  popupContent.innerHTML = `
+    <div style="min-width: 180px;">
+      <b>${c.emoji} ${escapeHtml(field.name)}</b><br>
+      🌱 ${c.name}<br>
+      📐 Площа: <b>${field.area} га</b><br>
+      🕒 ${field.date || '—'}<br>
+      <button class="popup-btn-delete" id="deleteFieldBtn_${field.id}">
+        🗑 Видалити поле
+      </button>
+    </div>
+  `;
+  
+  polygon.bindPopup(popupContent);
+  
+  // Обробник події після відкриття попапу (динамічне додавання кліку на кнопку)
+  polygon.on('popupopen', () => {
+    const btn = document.getElementById(`deleteFieldBtn_${field.id}`);
+    if (btn) {
+      // Запобігаємо дублюванню
+      const newBtn = btn.cloneNode(true);
+      btn.parentNode.replaceChild(newBtn, btn);
+      newBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        map.closePopup();
+        deleteFieldById(field.id);
+      });
+    }
+  });
+}
+
+// Простий захист від XSS
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/[&<>]/g, function(m) {
+    if (m === '&') return '&amp;';
+    if (m === '<') return '&lt;';
+    if (m === '>') return '&gt;';
+    return m;
+  });
+}
+
+// ---------- Відображення збереженого поля (полігон + іконка + попап з видаленням) ----------
 function drawSavedField(field) {
   const c = CROPS[field.crop] || CROPS[''];
   const poly = L.polygon(field.pts, {
     color: c.color,
     fillColor: c.fill,
-    fillOpacity: 0.38,
-    weight: 2.5,
+    fillOpacity: 0.42,
+    weight: 2.8,
+    opacity: 0.9,
+    interactive: true,
   }).addTo(map);
-
-  const popupHtml = `
-    <b>${c.emoji} ${field.name}</b><br>
-    🌱 ${c.name}<br>
-    📐 Площа: <b>${field.area} га</b><br>
-    🕒 ${field.date}
-  `;
-  poly.bindPopup(popupHtml);
-
-  // Іконка в центрі поля
+  
+  // Прив'язуємо попап з кнопкою видалення
+  bindPopupWithDelete(poly, field);
+  
+  // Центр поля для іконки
   const center = polyCenter(field.pts);
   const marker = L.marker(center, {
     icon: makeCropIcon(field.crop),
-    interactive: false,
+    interactive: false,      // щоб не заважати клікам по полігону
     zIndexOffset: 100,
   }).addTo(iconLayer);
-
-  fieldLayers.push({ field, poly, marker });
+  
+  fieldLayers.push({ id: field.id, poly, marker });
   updateIconVisibility();
 }
 
-// ── Завантажити поля з localStorage ──
+// ---------- Завантаження всіх полів з localStorage ----------
 function loadSavedFields() {
+  // Очистимо старі шари перед перезавантаженням (на випадок повторного виклику)
+  fieldLayers.forEach(layer => {
+    if (layer.poly) map.removeLayer(layer.poly);
+    if (layer.marker) map.removeLayer(layer.marker);
+  });
+  fieldLayers = [];
+  iconLayer.clearLayers();   // очищаємо групу іконок
+  
   try {
     const raw = localStorage.getItem('agromap_fields');
-    if (raw) savedFields = JSON.parse(raw);
-    savedFields.forEach(f => drawSavedField(f));
-  } catch(e) {}
-}
-
-// ── Малювання ──
-map.on('click', (e) => {
-  if (mode !== 'draw') return;
-  pts.push([e.latlng.lat, e.latlng.lng]);
-
-  const m = L.circleMarker([e.latlng.lat, e.latlng.lng], {
-    radius: 5, color: '#4caf50', fillColor: '#a5d6a7', fillOpacity: 1, weight: 2
-  }).addTo(map);
-  tempMarkers.push(m);
-
-  if (currentPoly) map.removeLayer(currentPoly);
-  if (pts.length >= 2) {
-    currentPoly = L.polygon(pts, {
-      color: '#4caf50', fillColor: '#81c784', fillOpacity: 0.3,
-      weight: 2, dashArray: '6,4'
-    }).addTo(map);
+    if (raw) {
+      savedFields = JSON.parse(raw);
+      // Переконаймось, що кожне поле має унікальний id (для старих даних)
+      savedFields.forEach(f => {
+        if (!f.id) f.id = Date.now() + Math.random() * 10000;
+      });
+      // Зберігаємо назад (щоб всі поля мали id)
+      localStorage.setItem('agromap_fields', JSON.stringify(savedFields));
+      savedFields.forEach(f => drawSavedField(f));
+    } else {
+      savedFields = [];
+    }
+  } catch(e) {
+    console.warn(e);
+    savedFields = [];
   }
-
-  updateAreaDisplay();
-  updateHint();
-  checkSaveBtn();
-});
-
-// ── Геолокація ──
-map.locate({ setView: true, maxZoom: 15 });
-map.on('locationfound', e => {
-  L.circleMarker(e.latlng, {
-    radius: 8, color: '#1565c0', fillColor: '#42a5f5', fillOpacity: 1
-  }).addTo(map).bindPopup('📍 Ви тут').openPopup();
-});
-
-// ── Режими ──
-function setMode(m) {
-  mode = m;
-  document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
-  document.getElementById(`btn-${m}`).classList.add('active');
-  document.getElementById('hintText').textContent =
-    m === 'view' ? 'Натисніть на поле щоб побачити інформацію' : hints()[0];
 }
 
-function hints() {
-  return [
+// ---------- Логіка малювання ----------
+function updateAreaDisplay() {
+  document.getElementById('areaDisplay').innerHTML = `Площа: <span>${calcArea(pts)}</span> га`;
+}
+
+function updateHint() {
+  const hintMessages = [
     'Натисніть на карту щоб почати малювати поле',
     'Додайте ще одну точку...',
     'Ще одна точка — і поле замкнеться',
     `${pts.length} точок. Продовжуйте або збережіть`,
   ];
+  const idx = Math.min(pts.length, hintMessages.length - 1);
+  document.getElementById('hintText').textContent = hintMessages[idx];
+}
+
+function checkSaveBtn() {
+  const nameValid = document.getElementById('fieldName').value.trim().length > 0;
+  const enoughPoints = pts.length >= 3;
+  document.getElementById('saveBtn').disabled = !(nameValid && enoughPoints);
 }
 
 function clearCurrent() {
@@ -359,75 +486,130 @@ function clearCurrent() {
   document.getElementById('areaDisplay').innerHTML = 'Площа: <span>—</span> га';
   checkSaveBtn();
   updateHint();
-  showToast('Очищено ✓');
+  showToast('🔄 Малюнок очищено');
 }
 
-function calcArea(pts) {
-  if (pts.length < 3) return 0;
-  const R = 6371000;
-  let area = 0;
-  const n = pts.length;
-  for (let i = 0; i < n; i++) {
-    const [lat1, lon1] = pts[i];
-    const [lat2, lon2] = pts[(i+1) % n];
-    const φ1 = lat1 * Math.PI/180, φ2 = lat2 * Math.PI/180;
-    const λ2 = lon2 * Math.PI/180, λ1 = lon1 * Math.PI/180;
-    area += (λ2 - λ1) * (2 + Math.sin(φ1) + Math.sin(φ2));
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
+  document.getElementById(`btn-${m}`).classList.add('active');
+  const hintDiv = document.getElementById('hintText');
+  if (mode === 'view') {
+    hintDiv.textContent = '📌 Натисніть на будь-яке поле → з’явиться інформація та кнопка "Видалити"';
+  } else {
+    hintDiv.textContent = '✏️ Клікайте на карту, додавайте точки для нового поля';
   }
-  return ((Math.abs(area) * R * R / 2) / 10000).toFixed(2);
+  // У режимі view прибираємо незавершений малюнок
+  if (mode === 'view') {
+    clearCurrent();
+  }
 }
 
-function updateAreaDisplay() {
-  document.getElementById('areaDisplay').innerHTML =
-    `Площа: <span>${calcArea(pts)}</span> га`;
-}
-
-function updateHint() {
-  const h = hints();
-  document.getElementById('hintText').textContent =
-    h[Math.min(pts.length, h.length - 1)];
-}
-
-function checkSaveBtn() {
-  const ok = document.getElementById('fieldName').value.trim().length > 0 && pts.length >= 3;
-  document.getElementById('saveBtn').disabled = !ok;
-}
-document.getElementById('fieldName').addEventListener('input', checkSaveBtn);
-
+// Збереження нового поля
 function saveField() {
   const name = document.getElementById('fieldName').value.trim();
   const crop = document.getElementById('cropType').value;
   if (!name) return showToast('⚠️ Введіть назву поля');
   if (pts.length < 3) return showToast('⚠️ Намалюйте поле (мін. 3 точки)');
-
+  
   const area = calcArea(pts);
   const now = new Date().toLocaleDateString('uk-UA');
-  const field = { name, crop, pts: [...pts], area, date: now, id: Date.now() };
-
-  savedFields.push(field);
-  try { localStorage.setItem('agromap_fields', JSON.stringify(savedFields)); } catch(e) {}
-
-  drawSavedField(field);
-
-  if (tg?.sendData) {
-    tg.sendData(JSON.stringify(field));
+  const newId = Date.now() + Math.floor(Math.random() * 10000);
+  const newField = { 
+    id: newId,
+    name, 
+    crop, 
+    pts: [...pts], 
+    area, 
+    date: now,
+  };
+  
+  savedFields.push(newField);
+  try {
+    localStorage.setItem('agromap_fields', JSON.stringify(savedFields));
+  } catch(e) { showToast('Помилка збереження', true); return; }
+  
+  drawSavedField(newField);
+  
+  if (tg && tg.sendData) {
+    tg.sendData(JSON.stringify({ action: "create", field: newField }));
   } else {
     showToast(`✅ ${name} (${area} га) збережено`);
   }
-
+  
   clearCurrent();
   document.getElementById('fieldName').value = '';
   document.getElementById('cropType').value = '';
+  document.getElementById('saveBtn').disabled = true;
 }
 
-function showToast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 2500);
-}
+// ---------- Обробники подій карти (малювання) ----------
+map.on('click', (e) => {
+  if (mode !== 'draw') return;
+  // Додаємо точку
+  pts.push([e.latlng.lat, e.latlng.lng]);
+  
+  const marker = L.circleMarker([e.latlng.lat, e.latlng.lng], {
+    radius: 5, color: '#4caf50', fillColor: '#a5d6a7', fillOpacity: 1, weight: 2
+  }).addTo(map);
+  tempMarkers.push(marker);
+  
+  if (currentPoly) map.removeLayer(currentPoly);
+  if (pts.length >= 2) {
+    currentPoly = L.polygon(pts, {
+      color: '#4caf50', fillColor: '#81c784', fillOpacity: 0.3,
+      weight: 3, dashArray: '5,5'
+    }).addTo(map);
+  }
+  
+  updateAreaDisplay();
+  updateHint();
+  checkSaveBtn();
+});
 
+// Геолокація
+map.locate({ setView: true, maxZoom: 15 });
+map.on('locationfound', e => {
+  L.circleMarker(e.latlng, {
+    radius: 8, color: '#1565c0', fillColor: '#42a5f5', fillOpacity: 1, weight: 2
+  }).addTo(map).bindPopup('📍 Ви тут').openPopup();
+});
+
+// Слідкуємо за інпутом назви
+document.getElementById('fieldName').addEventListener('input', checkSaveBtn);
+
+// Підсвітка режимів при завантаженні
+window.setMode = setMode;
+window.saveField = saveField;
+window.clearCurrent = clearCurrent;
+
+// Ініціалізація
 loadSavedFields();
+setMode('draw');
+
+// Додатковий стиль для кнопки видалення (гарантія)
+const style = document.createElement('style');
+style.textContent = `
+  .popup-btn-delete {
+    background: #d32f2f;
+    color: white;
+    border: none;
+    border-radius: 28px;
+    padding: 8px 12px;
+    margin-top: 12px;
+    font-size: 13px;
+    font-weight: bold;
+    width: 100%;
+    cursor: pointer;
+    transition: 0.2s;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  }
+  .popup-btn-delete:hover { background: #b71c1c; }
+  .leaflet-popup-content-wrapper {
+    border-radius: 16px;
+  }
+`;
+document.head.appendChild(style);
 </script>
 </body>
 </html>
